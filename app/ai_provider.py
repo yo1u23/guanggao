@@ -1,3 +1,9 @@
+"""AI provider integrations and runtime configuration for classification.
+
+This module provides a pluggable provider (currently OpenRouter) for text and
+image classification to detect advertising content. It exposes runtime settings,
+management commands will adjust these values without restart.
+"""
 import asyncio
 import time
 from pathlib import Path

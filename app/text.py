@@ -1,3 +1,9 @@
+"""Text utilities: normalization and link detection.
+
+normalize_text applies NFKC normalization, removes zero-width characters,
+lowers case, and applies simple leet mappings to mitigate obfuscation.
+contains_link uses a regex to detect URLs/t.me/tg:// patterns.
+"""
 import re
 import unicodedata
 from typing import Tuple

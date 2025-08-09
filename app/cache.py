@@ -1,3 +1,8 @@
+"""In-memory LRU cache for OCR results.
+
+Used to avoid repeated OCR for identical media within the process lifetime.
+Persistent cache is implemented in the database (see db.py).
+"""
 from collections import OrderedDict
 from typing import Optional
 

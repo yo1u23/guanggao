@@ -1,3 +1,9 @@
+"""Simple asyncio-based semaphore limiter for OCR tasks.
+
+Use ocr_limited() as an async context manager to ensure the number of concurrent
+OCR tasks does not exceed the configured limit. The limit can be changed at
+runtime via set_ocr_limit().
+"""
 import asyncio
 from contextlib import asynccontextmanager
 

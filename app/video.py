@@ -1,3 +1,8 @@
+"""Video helpers: first-frame extraction and perceptual hashing.
+
+extract_first_frame uses ffmpeg to grab a frame from a video file.
+compute_image_phash computes a perceptual hash (pHash) for near-duplicate checks.
+"""
 import subprocess
 from pathlib import Path
 from typing import Optional
