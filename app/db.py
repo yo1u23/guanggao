@@ -53,6 +53,11 @@ CREATE TABLE IF NOT EXISTS ocr_cache (
 
 
 def _connect() -> sqlite3.Connection:
+    """Open a SQLite connection with safe defaults and ensured path.
+
+    Returns:
+        sqlite3.Connection: Connection with WAL and NORMAL sync.
+    """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL;")
@@ -61,12 +66,18 @@ def _connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
+    """Initialize database schema and run in-place migrations."""
     with _connect() as conn:
         conn.executescript(_SCHEMA)
         _migrate_rules_add_columns(conn)
 
 
 def _migrate_rules_add_columns(conn: sqlite3.Connection) -> None:
+    """Idempotently add newly introduced columns to `rules`.
+
+    Args:
+        conn: Open SQLite connection.
+    """
     cur = conn.execute("PRAGMA table_info(rules)")
     cols = {row[1] for row in cur.fetchall()}
     to_add: Dict[str, str] = {}
@@ -79,6 +90,14 @@ def _migrate_rules_add_columns(conn: sqlite3.Connection) -> None:
 
 
 def get_rules_row(chat_id: Optional[int]) -> Optional[Dict[str, Any]]:
+    """Fetch a raw dict row from `rules` by chat.
+
+    Args:
+        chat_id: Telegram chat id; None treated as 0.
+
+    Returns:
+        dict | None: Row mapping or None if not found.
+    """
     chat_id = int(chat_id or 0)
     with _connect() as conn:
         conn.row_factory = sqlite3.Row
@@ -90,6 +109,12 @@ def get_rules_row(chat_id: Optional[int]) -> Optional[Dict[str, Any]]:
 
 
 def upsert_rules_row(chat_id: Optional[int], data: Dict[str, Any]) -> None:
+    """Insert or update a rules row.
+
+    Args:
+        chat_id: Target chat id; None treated as 0.
+        data: Column values. Missing optional columns may be NULL/DEFAULT.
+    """
     chat_id = int(chat_id or 0)
     fields = (
         "keywords", "regexes", "action", "mute_seconds",
@@ -127,6 +152,10 @@ def upsert_rules_row(chat_id: Optional[int], data: Dict[str, Any]) -> None:
 
 
 def migrate_from_json_if_needed() -> None:
+    """One-time migration from legacy JSON files into SQLite.
+
+    Skips if the `rules` table already has at least one row.
+    """
     # If DB already has any row, skip
     with _connect() as conn:
         cur = conn.execute("SELECT 1 FROM rules LIMIT 1")
@@ -166,6 +195,15 @@ def migrate_from_json_if_needed() -> None:
 # --- User state CRUD ---
 
 def get_user_state_row(chat_id: int, user_id: int) -> Optional[Dict[str, Any]]:
+    """Fetch a user_state row for a given chat and user.
+
+    Args:
+        chat_id: Chat identifier.
+        user_id: User identifier.
+
+    Returns:
+        dict | None: Row mapping or None if not found.
+    """
     with _connect() as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.execute(
@@ -183,6 +221,13 @@ essential_state_fields = (
 
 
 def upsert_user_state(chat_id: int, user_id: int, data: Dict[str, Any]) -> None:
+    """Insert or update a `user_state` record.
+
+    Args:
+        chat_id: Chat identifier.
+        user_id: User identifier.
+        data: Dict containing required fields listed in `essential_state_fields`.
+    """
     vals = {k: data.get(k) for k in essential_state_fields}
     with _connect() as conn:
         conn.execute(
@@ -209,6 +254,13 @@ def upsert_user_state(chat_id: int, user_id: int, data: Dict[str, Any]) -> None:
 
 
 def update_user_state_fields(chat_id: int, user_id: int, fields: Dict[str, Any]) -> None:
+    """Update selected columns of `user_state` dynamically.
+
+    Args:
+        chat_id: Chat id.
+        user_id: User id.
+        fields: Mapping of column to new value; empty mapping is a no-op.
+    """
     if not fields:
         return
     sets = []
@@ -222,11 +274,20 @@ def update_user_state_fields(chat_id: int, user_id: int, fields: Dict[str, Any])
 
 
 def delete_user_state(chat_id: int, user_id: int) -> None:
+    """Delete a user_state record by composite key."""
     with _connect() as conn:
         conn.execute("DELETE FROM user_state WHERE chat_id = ? AND user_id = ?", (int(chat_id), int(user_id)))
 
 
 def get_ocr_cache(key: str) -> Optional[str]:
+    """Get cached OCR text by cache key.
+
+    Args:
+        key: file_unique_id or perceptual hash string.
+
+    Returns:
+        str | None: Cached text or None if not found.
+    """
     with _connect() as conn:
         conn.row_factory = sqlite3.Row
         cur = conn.execute("SELECT text FROM ocr_cache WHERE key = ?", (key,))
@@ -235,6 +296,7 @@ def get_ocr_cache(key: str) -> Optional[str]:
 
 
 def set_ocr_cache(key: str, text: str) -> None:
+    """Upsert OCR text into persistent cache for a key."""
     import time
     with _connect() as conn:
         conn.execute(
@@ -244,6 +306,7 @@ def set_ocr_cache(key: str, text: str) -> None:
 
 
 def count_ocr_cache() -> int:
+    """Count entries in OCR cache table."""
     with _connect() as conn:
         cur = conn.execute("SELECT COUNT(1) FROM ocr_cache")
         row = cur.fetchone()
@@ -251,5 +314,6 @@ def count_ocr_cache() -> int:
 
 
 def clear_ocr_cache() -> None:
+    """Delete all rows from OCR cache (irreversible)."""
     with _connect() as conn:
         conn.execute("DELETE FROM ocr_cache")

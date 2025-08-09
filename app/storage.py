@@ -29,6 +29,11 @@ _VALID_BUFFER_MODES = {"none", "mute", "restrict_media", "restrict_links"}
 
 
 def _default_rules() -> Rules:
+    """Return default per-chat `Rules` with safe, sensible defaults.
+
+    Returns:
+        Rules: Fresh rules instance used when no row exists for a chat.
+    """
     return Rules(
         keywords=[],
         regexes=[],
@@ -43,6 +48,14 @@ def _default_rules() -> Rules:
 
 
 def _row_to_rules(row: Optional[Dict[str, Any]]) -> Rules:
+    """Convert a DB row dict into a `Rules` object with validation.
+
+    Args:
+        row: Row mapping from `db.get_rules_row` or None.
+
+    Returns:
+        Rules: Normalized rules instance.
+    """
     if not row:
         return _default_rules()
     try:
@@ -86,11 +99,25 @@ def _row_to_rules(row: Optional[Dict[str, Any]]) -> Rules:
 
 
 def load_rules(chat_id: Optional[int] = None) -> Rules:
+    """Fetch rules for a chat (or global fallback chat_id=0).
+
+    Args:
+        chat_id: Telegram chat id. None/0 means global.
+
+    Returns:
+        Rules: Rules object for the chat, or defaults if missing.
+    """
     row = get_rules_row(chat_id)
     return _row_to_rules(row)
 
 
 def _save_rules(rules: Rules, chat_id: Optional[int]) -> None:
+    """Persist a `Rules` object into the DB.
+
+    Args:
+        rules: Rules to be stored.
+        chat_id: Target chat id (None treated as 0/global).
+    """
     upsert_rules_row(
         chat_id,
         {
@@ -108,6 +135,15 @@ def _save_rules(rules: Rules, chat_id: Optional[int]) -> None:
 
 
 def add_keyword(keyword: str, chat_id: Optional[int] = None) -> Rules:
+    """Append a keyword to the rules if not duplicated.
+
+    Args:
+        keyword: Keyword to add.
+        chat_id: Target chat.
+
+    Returns:
+        Rules: Updated rules.
+    """
     keyword = keyword.strip()
     rules = load_rules(chat_id)
     if keyword and keyword not in rules.keywords:
@@ -117,6 +153,15 @@ def add_keyword(keyword: str, chat_id: Optional[int] = None) -> Rules:
 
 
 def remove_keyword(keyword: str, chat_id: Optional[int] = None) -> Rules:
+    """Remove a keyword from the rules.
+
+    Args:
+        keyword: Keyword to remove.
+        chat_id: Target chat.
+
+    Returns:
+        Rules: Updated rules.
+    """
     keyword = keyword.strip()
     rules = load_rules(chat_id)
     rules.keywords = [k for k in rules.keywords if k != keyword]
@@ -125,6 +170,15 @@ def remove_keyword(keyword: str, chat_id: Optional[int] = None) -> Rules:
 
 
 def add_regex(pattern: str, chat_id: Optional[int] = None) -> Rules:
+    """Append a regex pattern to the rules if not duplicated.
+
+    Args:
+        pattern: Regex string.
+        chat_id: Target chat.
+
+    Returns:
+        Rules: Updated rules.
+    """
     pattern = pattern.strip()
     rules = load_rules(chat_id)
     if pattern and pattern not in rules.regexes:
@@ -134,6 +188,15 @@ def add_regex(pattern: str, chat_id: Optional[int] = None) -> Rules:
 
 
 def remove_regex(pattern: str, chat_id: Optional[int] = None) -> Rules:
+    """Remove a regex pattern from the rules.
+
+    Args:
+        pattern: Regex string to remove.
+        chat_id: Target chat.
+
+    Returns:
+        Rules: Updated rules.
+    """
     pattern = pattern.strip()
     rules = load_rules(chat_id)
     rules.regexes = [p for p in rules.regexes if p != pattern]
@@ -142,6 +205,18 @@ def remove_regex(pattern: str, chat_id: Optional[int] = None) -> Rules:
 
 
 def set_action(action: str, chat_id: Optional[int] = None) -> Rules:
+    """Set the default moderation action for this chat.
+
+    Args:
+        action: One of `ALLOWED_ACTIONS`.
+        chat_id: Target chat.
+
+    Raises:
+        ValueError: If action is invalid.
+
+    Returns:
+        Rules: Updated rules.
+    """
     if action not in ALLOWED_ACTIONS:
         raise ValueError("Invalid action")
     rules = load_rules(chat_id)
@@ -151,6 +226,18 @@ def set_action(action: str, chat_id: Optional[int] = None) -> Rules:
 
 
 def set_mute_seconds(seconds: int, chat_id: Optional[int] = None) -> Rules:
+    """Set mute duration in seconds for mute-related actions.
+
+    Args:
+        seconds: Non-negative duration.
+        chat_id: Target chat.
+
+    Raises:
+        ValueError: If `seconds` < 0.
+
+    Returns:
+        Rules: Updated rules.
+    """
     if seconds < 0:
         raise ValueError("seconds must be >= 0")
     rules = load_rules(chat_id)
@@ -160,6 +247,19 @@ def set_mute_seconds(seconds: int, chat_id: Optional[int] = None) -> Rules:
 
 
 def set_newcomer_buffer(seconds: int, mode: str, chat_id: Optional[int] = None) -> Rules:
+    """Configure newcomer buffer window and mode.
+
+    Args:
+        seconds: Non-negative buffer duration.
+        mode: One of `_VALID_BUFFER_MODES`.
+        chat_id: Target chat.
+
+    Raises:
+        ValueError: If seconds < 0 or mode invalid.
+
+    Returns:
+        Rules: Updated rules.
+    """
     if seconds < 0:
         raise ValueError("seconds must be >= 0")
     if mode not in _VALID_BUFFER_MODES:
@@ -172,6 +272,19 @@ def set_newcomer_buffer(seconds: int, mode: str, chat_id: Optional[int] = None) 
 
 
 def set_captcha(enabled: bool, timeout_seconds: Optional[int] = None, chat_id: Optional[int] = None) -> Rules:
+    """Enable/disable captcha and optionally set timeout.
+
+    Args:
+        enabled: Whether captcha is required for newcomers.
+        timeout_seconds: Optional timeout (>=10 seconds).
+        chat_id: Target chat.
+
+    Raises:
+        ValueError: If provided timeout_seconds < 10.
+
+    Returns:
+        Rules: Updated rules.
+    """
     rules = load_rules(chat_id)
     rules.captcha_enabled = bool(enabled)
     if timeout_seconds is not None:
@@ -183,6 +296,15 @@ def set_captcha(enabled: bool, timeout_seconds: Optional[int] = None, chat_id: O
 
 
 def set_first_message_strict(enabled: bool, chat_id: Optional[int] = None) -> Rules:
+    """Toggle strict handling for a user's first message after joining.
+
+    Args:
+        enabled: If True, matched first message enforces delete+mute+notify.
+        chat_id: Target chat.
+
+    Returns:
+        Rules: Updated rules.
+    """
     rules = load_rules(chat_id)
     rules.first_message_strict = bool(enabled)
     _save_rules(rules, chat_id)
