@@ -18,6 +18,10 @@ UPDATE_INTERVAL="15m"  # supports systemd time: e.g. 15m, 1h, 1d
 SELF_CHECK=1
 ROLLBACK_ON_FAIL=1
 
+# Optional env controls for dry-run/testing
+SUDO_CMD="sudo"
+if [ -n "${NO_SUDO-}" ]; then SUDO_CMD=""; fi
+
 usage() {
   cat <<USAGE
 Bootstrap installer: clone repo, setup, and run as service (optional)
@@ -121,12 +125,16 @@ if [ -d "$DEST_DIR/.git" ]; then
 fi
 
 # Ensure apt-get, git, python3, venv
-if command -v apt-get >/dev/null 2>&1; then
-  info "Installing system deps (git, python3, venv, tesseract, ffmpeg)..."
-  sudo apt-get update -y
-  sudo apt-get install -y git python3 python3-venv tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra ffmpeg || true
+if [ -n "${SKIP_APT-}" ]; then
+  info "Skipping system deps installation due to SKIP_APT=1"
 else
-  warn "apt-get not found. Please install git/python3/venv/tesseract/ffmpeg manually."
+  if command -v apt-get >/dev/null 2>&1; then
+    info "Installing system deps (git, python3, venv, tesseract, ffmpeg)..."
+    $SUDO_CMD apt-get update -y || true
+    $SUDO_CMD apt-get install -y git python3 python3-venv tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra ffmpeg || true
+  else
+    warn "apt-get not found. Please install git/python3/venv/tesseract/ffmpeg manually."
+  fi
 fi
 
 # Clone or update latest default branch
@@ -138,8 +146,8 @@ if [ -d "$DEST_DIR/.git" ]; then
   git -C "$DEST_DIR" reset --hard "origin/$DEFAULT_BRANCH"
 else
   info "Cloning $REPO_URL ($DEFAULT_BRANCH) to $DEST_DIR ..."
-  sudo mkdir -p "$DEST_DIR"
-  sudo chown -R "$(id -un)":"$(id -gn)" "$DEST_DIR"
+  $SUDO_CMD mkdir -p "$DEST_DIR"
+  if [ -n "$SUDO_CMD" ]; then $SUDO_CMD chown -R "$(id -un)":"$(id -gn)" "$DEST_DIR" || true; fi
   git clone --branch "$DEFAULT_BRANCH" --depth 1 "$REPO_URL" "$DEST_DIR"
 fi
 
@@ -212,13 +220,13 @@ rollback() {
     fi
     if [ $INSTALL_SERVICE -eq 1 ] && command -v systemctl >/dev/null 2>&1; then
       warn "Restarting service after rollback..."
-      sudo systemctl restart "$SERVICE_NAME" || true
+      $SUDO_CMD systemctl restart "$SERVICE_NAME" || true
     fi
     info "Rollback completed."
   else
     warn "Fresh install failed; removing $DEST_DIR ..."
     cd /
-    sudo rm -rf "$DEST_DIR"
+    $SUDO_CMD rm -rf "$DEST_DIR"
     info "Cleaned $DEST_DIR"
   fi
 }
@@ -240,7 +248,7 @@ if [ $INSTALL_SERVICE -eq 1 ]; then
   else
     SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
     info "Installing systemd service: $SERVICE_FILE (User=$SERVICE_USER)"
-    sudo bash -c "cat > '$SERVICE_FILE'" <<SERVICE
+    $SUDO_CMD bash -c "cat > '$SERVICE_FILE'" <<SERVICE
 [Unit]
 Description=Telegram Ad Guard Bot
 After=network-online.target
@@ -257,9 +265,9 @@ User=$SERVICE_USER
 [Install]
 WantedBy=multi-user.target
 SERVICE
-    sudo systemctl daemon-reload
-    sudo systemctl enable "$SERVICE_NAME"
-    sudo systemctl restart "$SERVICE_NAME" || sudo systemctl start "$SERVICE_NAME"
+    $SUDO_CMD systemctl daemon-reload
+    $SUDO_CMD systemctl enable "$SERVICE_NAME"
+    $SUDO_CMD systemctl restart "$SERVICE_NAME" || $SUDO_CMD systemctl start "$SERVICE_NAME"
     info "Service '$SERVICE_NAME' started. Use: systemctl status $SERVICE_NAME"
   fi
 fi
@@ -272,7 +280,7 @@ if [ $INSTALL_AUTO_UPDATE -eq 1 ]; then
     UPDATE_SVC="/etc/systemd/system/${SERVICE_NAME}-update.service"
     UPDATE_TMR="/etc/systemd/system/${SERVICE_NAME}-update.timer"
     info "Installing auto-update timer: every $UPDATE_INTERVAL"
-    sudo bash -c "cat > '$UPDATE_SVC'" <<UPSVC
+    $SUDO_CMD bash -c "cat > '$UPDATE_SVC'" <<UPSVC
 [Unit]
 Description=Auto update for Telegram Ad Guard Bot
 After=network-online.target
@@ -285,7 +293,7 @@ ExecStart=/bin/bash $DEST_DIR/scripts/self_update.sh
 User=$SERVICE_USER
 UPSVC
 
-    sudo bash -c "cat > '$UPDATE_TMR'" <<UPTMR
+    $SUDO_CMD bash -c "cat > '$UPDATE_TMR'" <<UPTMR
 [Unit]
 Description=Run ${SERVICE_NAME}-update.service every $UPDATE_INTERVAL
 
@@ -298,9 +306,9 @@ Unit=${SERVICE_NAME}-update.service
 [Install]
 WantedBy=timers.target
 UPTMR
-    sudo systemctl daemon-reload
-    sudo systemctl enable "${SERVICE_NAME}-update.timer"
-    sudo systemctl restart "${SERVICE_NAME}-update.timer" || sudo systemctl start "${SERVICE_NAME}-update.timer"
+    $SUDO_CMD systemctl daemon-reload
+    $SUDO_CMD systemctl enable "${SERVICE_NAME}-update.timer"
+    $SUDO_CMD systemctl restart "${SERVICE_NAME}-update.timer" || $SUDO_CMD systemctl start "${SERVICE_NAME}-update.timer"
     info "Auto-update timer enabled. Use: systemctl list-timers | grep ${SERVICE_NAME}-update"
   fi
 fi
