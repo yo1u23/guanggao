@@ -73,6 +73,21 @@ python -m app.bot
 - 添加关键词：`/add_keyword 低价代充`
 - 发送文本或包含该词的图片，观察是否按设定动作触发
 
+## 拉库一键部署
+用于全新环境一键克隆仓库、搭建并可选注册为 systemd 服务：
+```bash
+# 交互式最简（默认拉取 main 分支到 /opt/telegram-ad-guard-bot）
+sudo bash scripts/install_from_repo.sh
+
+# 带参数（自动运行并注册 systemd 服务）
+sudo bash scripts/install_from_repo.sh \
+  -r https://github.com/yo1u23/guanggao \
+  -b main \
+  -d /opt/telegram-ad-guard-bot \
+  -R -s -n telegram-ad-guard-bot -u ubuntu \
+  -t 123456:ABC-DEF -a 111111,222222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
+```
+
 ## 部署建议
 - 使用 `systemd` 或 `pm2` 守护进程运行，崩溃自动重启
 - 记录日志（可以使用 shell 重定向或日志系统）
