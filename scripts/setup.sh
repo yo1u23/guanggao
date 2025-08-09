@@ -11,6 +11,13 @@ ADMIN_LOG_CHAT_IDS="${ADMIN_LOG_CHAT_IDS-}"
 OCR_LANGUAGES="${OCR_LANGUAGES-chi_sim+eng}"
 DEFAULT_ACTION="${DEFAULT_ACTION-delete_and_mute_and_notify}"
 AUTO_Y=0
+# AI defaults from env
+AI_MODE="${AI_MODE-off}"
+OPENROUTER_API_BASE="${OPENROUTER_API_BASE-https://openrouter.ai/api/v1}"
+OPENROUTER_API_KEY="${OPENROUTER_API_KEY-}"
+OPENROUTER_MODEL="${OPENROUTER_MODEL-gpt-4o-mini}"
+AI_EXCLUSIVE="${AI_EXCLUSIVE-false}"
+AI_CLASSIFY_THRESHOLD="${AI_CLASSIFY_THRESHOLD-0.7}"
 
 usage() {
   cat <<USAGE
@@ -24,19 +31,29 @@ Options (all optional; if omitted, an interactive wizard will prompt):
   -d DEFAULT_ACTION        Action on hit (default: delete_and_mute_and_notify)
   -r                       Run bot after setup
   -y                       Fully non-interactive; use env/defaults; implies -r if RUN_AFTER=1
-  -h                       Show this help
 
-Environment variables honored: TELEGRAM_BOT_TOKEN, ADMIN_IDS, ADMIN_LOG_CHAT_IDS, OCR_LANGUAGES, DEFAULT_ACTION, RUN_AFTER
+AI (OpenRouter) options:
+  -M AI_MODE               off|openrouter (default from env AI_MODE)
+  -K OPENROUTER_API_KEY    OpenRouter API key
+  -B OPENROUTER_API_BASE   API base (default: https://openrouter.ai/api/v1)
+  -m OPENROUTER_MODEL      Model (e.g., gpt-4o-mini)
+  -E AI_EXCLUSIVE          on|off (image/video via AI only)
+  -T AI_THRESHOLD          0..1 (classification threshold, default 0.7)
+
+Environment variables honored: TELEGRAM_BOT_TOKEN, ADMIN_IDS, ADMIN_LOG_CHAT_IDS,
+OCR_LANGUAGES, DEFAULT_ACTION, RUN_AFTER, AI_MODE, OPENROUTER_API_BASE, OPENROUTER_API_KEY,
+OPENROUTER_MODEL, AI_EXCLUSIVE, AI_CLASSIFY_THRESHOLD
 
 Examples:
-  ./scripts/setup.sh -t 123:ABC -a 111,222 -l -1001234567890 -r
-  TELEGRAM_BOT_TOKEN=123:ABC RUN_AFTER=1 ./scripts/setup.sh -y
+  ./scripts/setup.sh -t 123:ABC -a 111,222 -l -1001234567890 -r \
+    -M openrouter -K sk-... -m gpt-4o-mini -E on -T 0.7
+  TELEGRAM_BOT_TOKEN=123:ABC RUN_AFTER=1 AI_MODE=openrouter OPENROUTER_API_KEY=sk-... ./scripts/setup.sh -y
 USAGE
 }
 
 # Parse args
-if [ $# -gt 0 ]; then
-  while getopts ":t:a:l:o:d:ryh" opt; do
+if [ $# > 0 ]; then
+  while getopts ":t:a:l:o:d:ryM:K:B:m:E:T:h" opt; do
     case $opt in
       t) TOKEN="$OPTARG" ;;
       a) ADMIN_IDS="$OPTARG" ;;
@@ -45,6 +62,12 @@ if [ $# -gt 0 ]; then
       d) DEFAULT_ACTION="$OPTARG" ;;
       r) RUN_AFTER_SETUP=1 ;;
       y) AUTO_Y=1 ;;
+      M) AI_MODE="$OPTARG" ;;
+      K) OPENROUTER_API_KEY="$OPTARG" ;;
+      B) OPENROUTER_API_BASE="$OPTARG" ;;
+      m) OPENROUTER_MODEL="$OPTARG" ;;
+      E) AI_EXCLUSIVE="$OPTARG" ;;
+      T) AI_CLASSIFY_THRESHOLD="$OPTARG" ;;
       h) usage; exit 0 ;;
       :) echo "Option -$OPTARG requires an argument"; usage; exit 2 ;;
       \?) echo "Unknown option -$OPTARG"; usage; exit 2 ;;
@@ -85,6 +108,15 @@ if [ -z "$TOKEN" ] && [ "$AUTO_Y" -ne 1 ]; then
   prompt "管理员通知 Chat ID（逗号分隔，可留空）" ADMIN_LOG_CHAT_IDS "${ADMIN_LOG_CHAT_IDS-}"
   prompt "OCR 语言" OCR_LANGUAGES "$OCR_LANGUAGES"
   prompt "默认动作 (delete|notify|delete_and_notify|mute|mute_and_notify|delete_and_mute|delete_and_mute_and_notify)" DEFAULT_ACTION "$DEFAULT_ACTION"
+  # AI quick setup
+  prompt "AI 模式 (off|openrouter)" AI_MODE "$AI_MODE"
+  if [ "$AI_MODE" = "openrouter" ]; then
+    prompt "OpenRouter API Key" OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
+    prompt "OpenRouter API Base" OPENROUTER_API_BASE "$OPENROUTER_API_BASE"
+    prompt "OpenRouter 模型" OPENROUTER_MODEL "$OPENROUTER_MODEL"
+    prompt "AI 独占 (on/off)" AI_EXCLUSIVE "$AI_EXCLUSIVE"
+    prompt "AI 阈值 (0..1)" AI_CLASSIFY_THRESHOLD "$AI_CLASSIFY_THRESHOLD"
+  fi
   local_run="${RUN_AFTER_SETUP}"; [ -z "$local_run" ] && local_run=0
   read -r -p "搭建完成后立即运行机器人？(y/N): " yn || true
   case "${yn:-N}" in y|Y) RUN_AFTER_SETUP=1 ;; *) ;; esac
@@ -99,7 +131,7 @@ warn() { echo "[WARN] $*"; }
 if command -v apt-get >/dev/null 2>&1; then
   info "Updating apt and installing system dependencies..."
   sudo apt-get update -y
-  sudo apt-get install -y python3-venv tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra || true
+  sudo apt-get install -y python3-venv tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra ffmpeg || true
 else
   warn "apt-get not found. Please install Tesseract OCR and python3-venv manually for your OS."
 fi
@@ -144,6 +176,14 @@ set_env() {
 [ -n "$ADMIN_LOG_CHAT_IDS" ] && set_env ADMIN_LOG_CHAT_IDS "$ADMIN_LOG_CHAT_IDS"
 [ -n "$OCR_LANGUAGES" ] && set_env OCR_LANGUAGES "$OCR_LANGUAGES"
 [ -n "$DEFAULT_ACTION" ] && set_env DEFAULT_ACTION "$DEFAULT_ACTION"
+
+# AI envs
+[ -n "$AI_MODE" ] && set_env AI_MODE "$AI_MODE"
+[ -n "$OPENROUTER_API_BASE" ] && set_env OPENROUTER_API_BASE "$OPENROUTER_API_BASE"
+[ -n "$OPENROUTER_API_KEY" ] && set_env OPENROUTER_API_KEY "$OPENROUTER_API_KEY"
+[ -n "$OPENROUTER_MODEL" ] && set_env OPENROUTER_MODEL "$OPENROUTER_MODEL"
+[ -n "$AI_EXCLUSIVE" ] && set_env AI_EXCLUSIVE "$AI_EXCLUSIVE"
+[ -n "$AI_CLASSIFY_THRESHOLD" ] && set_env AI_CLASSIFY_THRESHOLD "$AI_CLASSIFY_THRESHOLD"
 
 info ".env configured at $ENV_FILE"
 
