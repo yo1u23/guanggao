@@ -127,6 +127,9 @@ TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN> ADMIN_IDS=<111,222> AI_MODE=openrouter OPENR
   - `systemctl status telegram-ad-guard-bot`
   - `journalctl -u telegram-ad-guard-bot -n 200 --no-pager`
 - 未使用 systemd：查看部署目录 `bot.log`
+- 诊断收集：
+  - 打包收集：`bash scripts/collect_diagnostics.sh -n telegram-ad-guard-bot -p /opt/telegram-ad-guard-bot`
+  - 文本模式：`bash scripts/collect_diagnostics.sh -T -o ./diag.txt`
 - 自检失败：
   - 临时禁用：在拉库脚本加入 `-C`（关自检）或 `-N`（关回滚）以便保留现场定位
   - 校验 `.env` 的 `TELEGRAM_BOT_TOKEN`
