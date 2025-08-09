@@ -3,7 +3,8 @@
 **版本（提交哈希）**: <!--VERSION_START-->2025-08-09+d0567e0<!--VERSION_END-->
 
 功能：
-- 文本与图片（OCR）双通道检测
+- 文本与图片（OCR）双通道检测；视频首帧 OCR + pHash 去重
+- AI 识别（OpenRouter）：文本本地未命中时走 AI；图片/视频可切换“AI 独占”跳过本地
 - 按群独立规则：关键词、正则、动作、禁言时长
 - 动作组合：delete / notify / delete_and_notify / mute / mute_and_notify / delete_and_mute / delete_and_mute_and_notify（默认）
 - 管理通知内联按钮：一键 删除 / 禁言10m/1h/1d / 解除禁言 / 踢出 / 封禁
@@ -26,21 +27,26 @@ bash scripts/setup.sh \
   -d delete_and_mute_and_notify \
   -r
 ```
-更多脚本与“拉库一键部署（可选自更新定时器，默认关闭）”说明见 `docs/SETUP.zh-CN.md`。
 
-拉库一键部署（Ubuntu，默认部署远端默认分支最新版本）：
+启用 AI（OpenRouter）
 ```bash
-# 交互式最简（默认克隆到 /opt/telegram-ad-guard-bot）
-sudo bash scripts/install_from_repo.sh
-
-# 带参数（自动运行与注册服务，可选自更新定时器）
-sudo bash scripts/install_from_repo.sh \
-  -r https://github.com/yo1u23/guanggao \
-  -d /opt/telegram-ad-guard-bot \
-  -R -s -U -I 1h -n telegram-ad-guard-bot -u ubuntu \
-  -t 123456:ABC-DEF -a 111111,222222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
+# 开启 OpenRouter + 设置 Key/模型 + 图片/视频走 AI 独占 + 阈值0.7
+bash scripts/setup.sh \
+  -M openrouter -K sk-... -m gpt-4o-mini -E on -T 0.7
 ```
-更多脚本与“拉库一键部署（可选自更新定时器，默认关闭）”说明见 `docs/SETUP.zh-CN.md`。
+
+### 拉库一键部署（Ubuntu）
+```bash
+# 全交互式（默认克隆到 /opt/telegram-ad-guard-bot）
+sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash"
+
+# 交互 + 注册服务 + 自动运行
+yes | sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -R -s"
+
+# 非交互（环境变量）+ 注册服务 + 自动运行 + 启用 AI 独占
+TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN> ADMIN_IDS=<111,222> AI_MODE=openrouter OPENROUTER_API_KEY=<sk-...> OPENROUTER_MODEL=gpt-4o-mini AI_EXCLUSIVE=on \
+  sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -R -s"
+```
 
 ### 运行（手动方式）
 ```bash
@@ -59,6 +65,14 @@ python -m app.bot
   - `/set_newcomer_buffer <秒> <none|mute|restrict_media|restrict_links>`
   - `/set_captcha <on|off> [timeout_seconds>=10]`
   - `/set_first_message_strict <on|off>`
+- AI 识别：
+  - `/set_ai off|openrouter`、`/set_ai_model gpt-4o-mini`、`/set_ai_key <API_KEY> [API_BASE]`
+  - `/set_ai_exclusive on|off`（图片/视频只走 AI，文本仍本地命中优先、未命中再 AI）
+  - `/ai_stats`（模式、模型、调用统计、阈值）
+- 缓存与限流：
+  - `/cache_stats`（OCR 持久化缓存条数、并发上限）
+  - `/cache_clear`（清空 OCR 持久化缓存）
+  - `/set_ocr_limit <n>`（设置 OCR 并发上限）
 - 更新与版本：
   - `/update`（仅全局管理员）
   - `/version`（显示当前提交哈希）
