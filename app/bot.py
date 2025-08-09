@@ -7,6 +7,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
+import subprocess
 
 from telegram import (
     Update,
@@ -50,6 +51,7 @@ from .state import (
     mark_captcha_passed,
     reset_user_state,
 )
+from .db import init_db, migrate_from_json_if_needed
 
 logging.basicConfig(
     level=logging.INFO,
@@ -283,6 +285,30 @@ async def cmd_set_first_message_strict(update: Update, context: ContextTypes.DEF
     enabled = onoff in {"on", "true", "1", "enable", "enabled"}
     rules = set_first_message_strict(enabled, chat_id)
     await update.message.reply_text(f"首条消息加严：{'开启' if rules.first_message_strict else '关闭'}")
+
+
+async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    await update.message.reply_text("开始更新，请稍候…")
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "bash", "scripts/self_update.sh",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await proc.communicate()
+        output = stdout.decode("utf-8", errors="ignore")
+        if proc.returncode == 0:
+            await update.message.reply_text("更新完成\n" + output[-3500:])
+        else:
+            await update.message.reply_text("更新失败\n" + output[-3500:])
+    except Exception as exc:
+        await update.message.reply_text(f"更新执行出错：{exc}")
 
 
 # --- Detection helpers ---
@@ -669,6 +695,10 @@ async def main() -> None:
     if not token:
         raise RuntimeError("请在环境变量 TELEGRAM_BOT_TOKEN 中提供机器人 Token。")
 
+    # Initialize DB and migrate from JSON once
+    init_db()
+    migrate_from_json_if_needed()
+
     app = (
         ApplicationBuilder()
         .token(token)
@@ -689,6 +719,7 @@ async def main() -> None:
     app.add_handler(CommandHandler("set_newcomer_buffer", cmd_set_newcomer_buffer))
     app.add_handler(CommandHandler("set_captcha", cmd_set_captcha))
     app.add_handler(CommandHandler("set_first_message_strict", cmd_set_first_message_strict))
+    app.add_handler(CommandHandler("update", cmd_update))
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
