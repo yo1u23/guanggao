@@ -13,7 +13,7 @@ bash scripts/install_tesseract_ocr.sh
 若脚本不适用你的系统，请手动安装：
 ```bash
 sudo apt-get update -y
-sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra
+sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra ffmpeg
 ```
 
 ## Python 依赖
@@ -34,6 +34,7 @@ cp .env.example .env
 - `ADMIN_LOG_CHAT_IDS`：通知发送到的 Chat ID（可选，逗号分隔）
 - `OCR_LANGUAGES`：Tesseract 语言（默认 `chi_sim+eng`）
 - `DEFAULT_ACTION`：默认动作（建议 `delete_and_mute_and_notify`）
+- AI（可选，OpenRouter）：`AI_MODE=openrouter`、`OPENROUTER_API_KEY`、`OPENROUTER_MODEL`
 
 ## 一键搭建脚本
 推荐使用一键脚本完成安装、配置与运行：
@@ -49,6 +50,10 @@ cp .env.example .env
   -o chi_sim+eng \
   -d delete_and_mute_and_notify \
   -r
+
+# 启用 AI（OpenRouter）并设置独占模式与阈值
+./scripts/setup.sh \
+  -M openrouter -K sk-... -m gpt-4o-mini -E on -T 0.7
 ```
 脚本支持参数：
 - `-t`: 机器人 Token（必需）
@@ -57,13 +62,13 @@ cp .env.example .env
 - `-o`: OCR 语言（可选，默认 `chi_sim+eng`）
 - `-d`: 默认动作（可选，默认 `delete_and_mute_and_notify`）
 - `-r`: 搭建完成后立即运行机器人
+- `-M/-K/-m/-E/-T`: AI 模式、Key、模型、独占、阈值（OpenRouter）
 
 ## 启动机器人
 ```bash
 source .venv/bin/activate
 python -m app.bot
 ```
-
 将机器人拉入目标群，并授予管理员权限：
 - 删除消息
 - 禁言成员（限制成员）
@@ -76,15 +81,15 @@ python -m app.bot
 ## 拉库一键部署
 用于全新环境一键克隆仓库、搭建并可选注册为 systemd 服务：
 ```bash
-# 交互式最简（默认拉取 main 分支到 /opt/telegram-ad-guard-bot）
-sudo bash scripts/install_from_repo.sh
+# 交互式：
+sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash"
 
-# 带参数（自动运行并注册 systemd 服务 + 启用自更新定时器每小时一次）
-sudo bash scripts/install_from_repo.sh \
-  -r https://github.com/yo1u23/guanggao \
-  -d /opt/telegram-ad-guard-bot \
-  -R -s -U -I 1h -n telegram-ad-guard-bot -u ubuntu \
-  -t 123456:ABC-DEF -a 111111,222222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
+# 交互 + 注册服务 + 自动运行
+yes | sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -R -s"
+
+# 非交互（通过环境变量传递）+ 注册服务 + 自动运行 + 启用 AI 独占
+TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN> ADMIN_IDS=<111,222> AI_MODE=openrouter OPENROUTER_API_KEY=<sk-...> OPENROUTER_MODEL=gpt-4o-mini AI_EXCLUSIVE=on \
+  sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -R -s"
 ```
 - `-U` 启用自更新定时器，`-I` 指定间隔（如 15m/1h/6h/1d）。
 - 自更新执行 `scripts/self_update.sh`，拉取最新代码、必要时重装依赖，并尝试重启服务。
@@ -97,5 +102,5 @@ sudo bash scripts/install_from_repo.sh \
 
 ## 升级与迁移
 - 升级代码后，建议重新 `pip install -r requirements.txt`
-- `app/data/` 下每个群的规则 JSON 文件可保留直接复用
+- 数据使用 SQLite：`app/data/ad_guard.db`
 - 更改配置后重启机器人生效

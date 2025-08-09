@@ -31,6 +31,20 @@
 - 动作与禁言
   - `/set_action delete|notify|delete_and_notify|mute|mute_and_notify|delete_and_mute|delete_and_mute_and_notify`
   - `/set_mute_seconds 秒数`：设置禁言时长（秒），`0` 表示不禁言
+- 新人治理
+  - `/set_newcomer_buffer <秒> <none|mute|restrict_media|restrict_links>`
+  - `/set_captcha <on|off> [timeout_seconds>=10]`
+  - `/set_first_message_strict <on|off>`
+- AI 与缓存/限流
+  - `/set_ai off|openrouter`、`/set_ai_model <model>`、`/set_ai_key <API_KEY> [API_BASE]`
+  - `/set_ai_exclusive on|off`（图片/视频只走 AI，文本本地优先、未命中再 AI）
+  - `/ai_stats`（模式、模型、调用统计与阈值）
+  - `/cache_stats`（OCR 持久化缓存条数、并发上限）
+  - `/cache_clear`（清空持久化缓存）
+  - `/set_ocr_limit <n>`（设置 OCR 并发上限）
+- 更新与版本
+  - `/update`（仅全局管理员）
+  - `/version`（显示当前提交哈希）
 - 帮助
   - `/help`：显示命令帮助
 
@@ -39,7 +53,20 @@
 2. 图片 OCR：下载分辨率最高的图片，使用 Tesseract 识别为文本
 3. 关键词匹配：大小写不敏感地判定是否包含任一关键词
 4. 正则匹配：对文本执行 `re.search(pattern, text, flags=re.IGNORECASE)`，任一命中即触发
-5. 触发处理动作：根据当前群组设置的动作执行删除、禁言、通知等
+5. AI 回退（文本）：若本地未命中且启用 AI，则调用 OpenRouter 文本分类判断
+6. 触发处理动作：根据当前群组设置的动作执行删除、禁言、通知等
+
+## AI 独占模式与回退逻辑
+- 文本：默认“本地规则优先，未命中再 AI”。文本不受独占模式影响（保持低成本）。
+- 图片/视频：
+  - 独占模式关闭（默认）：优先本地 OCR（含缓存与 pHash 去重），未命中可选再走 AI。
+  - 独占模式开启：直接送 AI 进行多模态识别，跳过本地 OCR 与规则匹配。
+- 阈值：可在内部设置（`ai_provider.py`）配置，影响 AI 判定为广告的敏感度。
+
+## 内联按钮权限与用法
+- 触发通知时，管理员通知消息会附带按钮：删除、禁言（10m/1h/1d）、解除禁言、踢出、封禁。
+- 按钮权限：仅群管理员或全局管理员可操作；权限不足会提示“无权限”。
+- 操作后：按钮会被禁用并在消息末尾标注“（已处理：<动作>）”。
 
 ## 通知对象
 - 通知默认发送给 `.env` 中的 `ADMIN_LOG_CHAT_IDS`（若配置多个则全部发送）
@@ -50,8 +77,9 @@
 - OCR 质量与图片清晰度、文字语言包有关。建议尽量提供清晰图片，并安装对应语言包
 
 ## 数据存储
-- 每个群的规则存放于 `app/data/rules_chat_<chat_id>.json`
-- 手动删除文件后，机器人会以默认规则重新生成
+- 使用 SQLite 持久化，数据库位于 `app/data/ad_guard.db`
+- 表结构：`rules`（群规则）、`user_state`（新人/验证码状态）、`ocr_cache`（OCR 文本缓存）
+- 首次运行会自动初始化并从历史 JSON（如存在）迁移至 SQLite
 
 ## 常见问题
 - 无法删除/禁言：请确认机器人在该群具备对应的管理员权限
