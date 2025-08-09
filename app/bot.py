@@ -313,22 +313,16 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    def _get_git_info() -> Tuple[str, str]:
-        import subprocess
-        tag = ""
-        commit = ""
+    def _get_commit() -> str:
+        import os, subprocess
+        # Prefer git commit, fallback to env GIT_COMMIT
         try:
-            tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], cwd=str(Path(__file__).resolve().parent.parent)).decode().strip()
+            return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=str(Path(__file__).resolve().parent.parent)).decode().strip()
         except Exception:
-            tag = "(no tag)"
-        try:
-            commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=str(Path(__file__).resolve().parent.parent)).decode().strip()
-        except Exception:
-            commit = "unknown"
-        return tag, commit
+            return os.environ.get("GIT_COMMIT", "unknown")
 
-    tag, commit = await asyncio.get_event_loop().run_in_executor(None, _get_git_info)
-    await update.message.reply_text(f"版本: {tag}\n提交: {commit}")
+    commit = await asyncio.get_event_loop().run_in_executor(None, _get_commit)
+    await update.message.reply_text(f"提交: {commit}")
 
 
 # --- Detection helpers ---
