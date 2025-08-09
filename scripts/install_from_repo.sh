@@ -17,6 +17,8 @@ UPDATE_INTERVAL="15m"  # supports systemd time: e.g. 15m, 1h, 1d
 # Self-check & rollback
 SELF_CHECK=1
 ROLLBACK_ON_FAIL=1
+# Force refresh upstream setup.sh
+FORCE_REFRESH_SETUP=0
 
 # Optional env controls for dry-run/testing
 SUDO_CMD="sudo"
@@ -40,6 +42,7 @@ Options:
   -Y                     Fully non-interactive (pass -y to setup.sh); use env vars for token etc.
   -C                     Disable post-install self-check
   -N                     Disable rollback on self-check failure
+  -F                     Force refresh scripts/setup.sh from upstream before running
 
 Pass-through setup options (optional; if omitted, interactive wizard will prompt):
   -t TOKEN               Bot token
@@ -57,7 +60,7 @@ AI (OpenRouter) pass-through options:
   -T AI_THRESHOLD        0..1
 
 Examples:
-  sudo bash scripts/install_from_repo.sh -r https://github.com/yo1u23/guanggao -R -s -U -I 1h -Y \
+  sudo bash scripts/install_from_repo.sh -r https://github.com/yo1u23/guanggao -R -s -U -I 1h -Y -F \
     -t 123456:ABC -a 111,222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify -M openrouter -K sk-... -m gpt-4o-mini -E on -T 0.7
 
   # Minimal: interactive prompts
@@ -65,7 +68,7 @@ Examples:
 USAGE
 }
 
-while getopts ":r:d:RsUn:u:I:Yt:a:l:o:D:M:K:B:m:E:T:CNh" opt; do
+while getopts ":r:d:RsUn:u:I:Yt:a:l:o:D:M:K:B:m:E:T:CNFh" opt; do
   case $opt in
     r) REPO_URL="$OPTARG" ;;
     d) DEST_DIR="$OPTARG" ;;
@@ -89,6 +92,7 @@ while getopts ":r:d:RsUn:u:I:Yt:a:l:o:D:M:K:B:m:E:T:CNh" opt; do
     T) SETUP_ARGS+=( -T "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     C) SELF_CHECK=0 ;;
     N) ROLLBACK_ON_FAIL=0 ;;
+    F) FORCE_REFRESH_SETUP=1 ;;
     h) usage; exit 0 ;;
     \?) echo "Unknown option -$OPTARG"; usage; exit 2 ;;
     :) echo "Option -$OPTARG requires an argument"; usage; exit 2 ;;
@@ -152,6 +156,13 @@ else
 fi
 
 cd "$DEST_DIR"
+
+# Optionally refresh upstream setup.sh to ensure latest fixes
+if [ $FORCE_REFRESH_SETUP -eq 1 ] || grep -n '^[[:space:]]*local\b' scripts/setup.sh >/dev/null 2>&1; then
+  info "Refreshing scripts/setup.sh from upstream..."
+  curl -fsSL "https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/setup.sh" -o scripts/setup.sh
+  chmod +x scripts/setup.sh || true
+fi
 
 # Build setup args
 if [ $SETUP_AUTO_Y -eq 1 ]; then
