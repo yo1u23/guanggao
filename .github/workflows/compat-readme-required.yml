@@ -2,13 +2,13 @@ name: Require README update
 
 on:
   push:
-    branches: [ main ]
+    branches: [ '**' ]
   pull_request:
-    branches: [ main ]
+    branches: [ '**' ]
 
 jobs:
   pass-always:
     runs-on: ubuntu-latest
     steps:
       - name: No-op
-        run: echo "Compatibility check to satisfy required status; actual README version injection handled elsewhere."
+        run: echo "Compatibility check to satisfy required status across all branches."
