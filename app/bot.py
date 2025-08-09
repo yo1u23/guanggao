@@ -33,6 +33,9 @@ from .config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, OCR_LANGUAGES, ADMIN_LOG_CHAT
 from .ocr import extract_text_from_image, OCRError
 from .text import normalize_text, contains_link
 from .cache import ocr_text_cache
+from .db import get_ocr_cache, set_ocr_cache
+from .video import extract_first_frame, compute_image_phash
+from .limiter import ocr_limited
 from .storage import (
     load_rules,
     add_keyword,
@@ -648,10 +651,15 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 tmp_path = Path(tmpdir) / f"photo_{file.file_unique_id}.jpg"
                 await file.download_to_drive(custom_path=str(tmp_path))
                 try:
-                    ocr_text = extract_text_from_image(tmp_path, OCR_LANGUAGES)
+                    async with ocr_limited():
+                        ocr_text = extract_text_from_image(tmp_path, OCR_LANGUAGES)
                     if ocr_text:
                         text_parts.append(ocr_text)
                         ocr_text_cache.set(file.file_unique_id, ocr_text)
+                        try:
+                            set_ocr_cache(file.file_unique_id, ocr_text)
+                        except Exception:
+                            pass
                 except OCRError as e:
                     logger.error("OCR 不可用：%s", e)
     except Exception as exc:

@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS user_state (
   captcha_message_id INTEGER,
   PRIMARY KEY(chat_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS ocr_cache (
+  key TEXT PRIMARY KEY,          -- file_unique_id or perceptual hash
+  text TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
 """
 
 
@@ -209,3 +215,20 @@ def update_user_state_fields(chat_id: int, user_id: int, fields: Dict[str, Any])
 def delete_user_state(chat_id: int, user_id: int) -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM user_state WHERE chat_id = ? AND user_id = ?", (int(chat_id), int(user_id)))
+
+
+def get_ocr_cache(key: str) -> Optional[str]:
+    with _connect() as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute("SELECT text FROM ocr_cache WHERE key = ?", (key,))
+        row = cur.fetchone()
+        return row["text"] if row else None
+
+
+def set_ocr_cache(key: str, text: str) -> None:
+    import time
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO ocr_cache(key, text, created_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET text=excluded.text, created_at=excluded.created_at",
+            (key, text, int(time.time())),
+        )

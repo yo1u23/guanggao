@@ -58,3 +58,9 @@ if _raw_log_chats:
                 ADMIN_LOG_CHAT_IDS.add(int(part))
             except ValueError:
                 continue
+
+# OCR concurrency limit
+try:
+    OCR_MAX_CONCURRENCY = max(1, int(os.environ.get("OCR_MAX_CONCURRENCY", "2")))
+except ValueError:
+    OCR_MAX_CONCURRENCY = 2
