@@ -66,6 +66,7 @@ from .state import (
     is_within_buffer,
     mark_captcha_passed,
     reset_user_state,
+    get_captcha_expected,
 )
 from .db import init_db, migrate_from_json_if_needed
 from .ai_provider import (
@@ -89,6 +90,13 @@ logger = logging.getLogger("ad_guard_bot")
 
 
 def ensure_admin(user_id: int, chat_admin_ids: Optional[List[int]] = None) -> bool:
+    """Check if a user is authorized as admin.
+
+    Order of precedence:
+    - If global `ADMIN_IDS` is set, only those users are admins.
+    - Else, chat admins are considered admins when provided.
+    - If neither provided, allow by default (bootstrap convenience).
+    """
     if ADMIN_IDS and user_id in ADMIN_IDS:
         return True
     if chat_admin_ids and user_id in chat_admin_ids:
@@ -99,6 +107,12 @@ def ensure_admin(user_id: int, chat_admin_ids: Optional[List[int]] = None) -> bo
 
 
 async def _get_chat_admin_ids(context: ContextTypes.DEFAULT_TYPE, chat_id: Optional[int]) -> List[int]:
+    """Fetch admin user ids for a chat; return empty list on errors or None chat.
+
+    Args:
+        context: Telegram context used to call get_chat_administrators
+        chat_id: Target chat id; if None/0, returns []
+    """
     if not chat_id:
         return []
     try:
@@ -566,6 +580,10 @@ def _match_rules(text: str, chat_id: Optional[int]) -> Tuple[bool, List[str], Li
 
 
 def _admin_action_keyboard(chat_id: int, user_id: int, message_id: int) -> InlineKeyboardMarkup:
+    """Build inline keyboard for admin actions bound to a specific message/user.
+
+    Buttons include delete, timed mutes, unmute, kick and ban.
+    """
     # Callback data format: a|<code>|<chat>|<user>|<msg>|[secs]
     row1 = [
         InlineKeyboardButton(text="删除", callback_data=f"a|d|{chat_id}|{user_id}|{message_id}"),
@@ -678,6 +696,7 @@ async def _handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE, mat
 # --- Newcomer and captcha flows ---
 
 def _generate_captcha() -> Tuple[str, str]:
+    """Generate a simple math captcha question and its expected answer."""
     # Simple math captcha: a+b
     a = secrets.randbelow(9) + 1
     b = secrets.randbelow(9) + 1
@@ -687,6 +706,7 @@ def _generate_captcha() -> Tuple[str, str]:
 
 
 def _captcha_keyboard(chat_id: int, user_id: int, correct: str) -> InlineKeyboardMarkup:
+    """Build a 2x2 inline keyboard for captcha options including the correct one."""
     # Provide 4 options including correct answer
     options = {correct}
     while len(options) < 4:
@@ -702,6 +722,10 @@ def _captcha_keyboard(chat_id: int, user_id: int, correct: str) -> InlineKeyboar
 
 
 async def _send_captcha(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, timeout_seconds: int) -> None:
+    """Send captcha message and schedule a timeout task to kick on failure.
+
+    Persists expected answer and message id into runtime state for validation.
+    """
     question, answer = _generate_captcha()
     kb = _captcha_keyboard(chat_id, user_id, answer)
     try:
