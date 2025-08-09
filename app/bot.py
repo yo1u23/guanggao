@@ -289,10 +289,9 @@ async def cmd_set_first_message_strict(update: Update, context: ContextTypes.DEF
 
 async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
-    if not ensure_admin(user_id, chat_admin_ids):
-        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+    # Only global admins can trigger self-update
+    if ADMIN_IDS and user_id not in ADMIN_IDS:
+        await update.message.reply_text("无权限。仅限全局管理员。")
         return
     await update.message.reply_text("开始更新，请稍候…")
     try:
