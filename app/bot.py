@@ -65,6 +65,9 @@ from .ai_provider import (
     load_ai_credentials,
     get_ai_stats,
     set_ai_threshold,
+    classify_image_with_openrouter,
+    set_ai_exclusive,
+    get_ai_exclusive,
 )
 
 logging.basicConfig(
@@ -445,6 +448,21 @@ async def cmd_ai_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
+async def cmd_set_ai_exclusive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    if not context.args:
+        await update.message.reply_text(f"当前 AI 独占模式：{get_ai_exclusive()}，用法：/set_ai_exclusive <on|off>")
+        return
+    val = context.args[0].lower() in {"on", "true", "1", "enable"}
+    set_ai_exclusive(val)
+    await update.message.reply_text(f"AI 独占模式：{get_ai_exclusive()}")
+
+
 # --- Detection helpers ---
 
 def _gather_message_text(message: Message) -> str:
@@ -756,6 +774,21 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if message.caption:
         text_parts.append(message.caption)
 
+    # AI exclusive: send image to AI provider, skip local OCR
+    if should_use_ai() and get_ai_exclusive():
+        try:
+            photo = message.photo[-1]
+            file = await photo.get_file()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_path = Path(tmpdir) / f"photo_{file.file_unique_id}.jpg"
+                await file.download_to_drive(custom_path=str(tmp_path))
+                is_ad, score, label = await classify_image_with_openrouter(tmp_path)
+                if is_ad:
+                    await _handle_action(update, context, f"[AI:{label} {score:.2f}]", ["AI"], [])
+                return
+        except Exception as exc:
+            logger.warning("AI 图片判别失败，回退本地: %s", exc)
+    # fallback to local OCR path
     try:
         photo = message.photo[-1]
         file = await photo.get_file()
@@ -797,24 +830,41 @@ async def on_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if message.caption:
         text_parts.append(message.caption)
 
+    # AI exclusive path for video (first frame)
+    if should_use_ai() and get_ai_exclusive():
+        try:
+            video = message.video
+            if not video:
+                return
+            file = await video.get_file()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                vpath = Path(tmpdir) / f"video_{file.file_unique_id}.mp4"
+                fpath = Path(tmpdir) / f"frame_{file.file_unique_id}.jpg"
+                await file.download_to_drive(custom_path=str(vpath))
+                if extract_first_frame(vpath, fpath):
+                    is_ad, score, label = await classify_image_with_openrouter(fpath)
+                    if is_ad:
+                        await _handle_action(update, context, f"[AI:{label} {score:.2f}]", ["AI"], [])
+                    return
+        except Exception as exc:
+            logger.warning("AI 视频判别失败，回退本地: %s", exc)
+
+    # fallback to local OCR path
     try:
         video = message.video
         if not video:
             return
         file = await video.get_file()
-        # 1) Try memory cache by unique id
         cached = ocr_text_cache.get(file.file_unique_id)
         if cached is not None:
             text_parts.append(cached)
         else:
-            # 2) Try DB cache by unique id
             try:
                 db_text = get_ocr_cache(file.file_unique_id)
                 if db_text:
                     ocr_text_cache.set(file.file_unique_id, db_text)
                     text_parts.append(db_text)
                 else:
-                    # 3) Download video, extract first frame, compute phash and try DB cache by phash
                     with tempfile.TemporaryDirectory() as tmpdir:
                         vpath = Path(tmpdir) / f"video_{file.file_unique_id}.mp4"
                         fpath = Path(tmpdir) / f"frame_{file.file_unique_id}.jpg"
@@ -824,17 +874,14 @@ async def on_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                             if phash:
                                 ph_text = get_ocr_cache(phash)
                                 if ph_text:
-                                    # cache hit by phash
                                     ocr_text_cache.set(file.file_unique_id, ph_text)
                                     text_parts.append(ph_text)
                                 else:
-                                    # 4) OCR the frame under limiter
                                     try:
                                         async with ocr_limited():
                                             ocr_text = extract_text_from_image(fpath, OCR_LANGUAGES)
                                         if ocr_text:
                                             text_parts.append(ocr_text)
-                                            # store under unique id and phash if available
                                             ocr_text_cache.set(file.file_unique_id, ocr_text)
                                             try:
                                                 set_ocr_cache(file.file_unique_id, ocr_text)
@@ -975,6 +1022,7 @@ async def main() -> None:
     app.add_handler(CommandHandler("set_ai_model", cmd_set_ai_model))
     app.add_handler(CommandHandler("set_ai_key", cmd_set_ai_key))
     app.add_handler(CommandHandler("ai_stats", cmd_ai_stats))
+    app.add_handler(CommandHandler("set_ai_exclusive", cmd_set_ai_exclusive))
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))

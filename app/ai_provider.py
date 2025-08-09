@@ -1,5 +1,6 @@
 import asyncio
 import time
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import httpx
@@ -10,6 +11,7 @@ OPENROUTER_API_BASE = "https://openrouter.ai/api/v1"
 OPENROUTER_API_KEY = ""
 OPENROUTER_MODEL = "gpt-4o-mini"
 AI_CLASSIFY_THRESHOLD = 0.7  # 0..1
+AI_EXCLUSIVE = False  # if True, skip local OCR/规则，仅用AI
 
 # Basic rate accounting (best-effort, in-memory)
 _ai_calls_total = 0
@@ -37,6 +39,16 @@ def set_ai_threshold(val: float) -> float:
     return AI_CLASSIFY_THRESHOLD
 
 
+def set_ai_exclusive(enabled: bool) -> bool:
+    global AI_EXCLUSIVE
+    AI_EXCLUSIVE = bool(enabled)
+    return AI_EXCLUSIVE
+
+
+def get_ai_exclusive() -> bool:
+    return AI_EXCLUSIVE
+
+
 def load_ai_credentials(api_base: Optional[str], api_key: Optional[str]) -> None:
     global OPENROUTER_API_BASE, OPENROUTER_API_KEY
     if api_base:
@@ -53,6 +65,7 @@ def get_ai_stats() -> Dict[str, object]:
         "calls_failed": _ai_calls_failed,
         "last_error": _ai_last_error or "",
         "threshold": AI_CLASSIFY_THRESHOLD,
+        "exclusive": AI_EXCLUSIVE,
     }
 
 
@@ -90,6 +103,59 @@ async def classify_text_with_openrouter(text: str) -> Tuple[bool, float, str]:
 
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+            import json
+            obj = json.loads(content)
+            label = str(obj.get("label", "unsure")).lower()
+            try:
+                score = float(obj.get("score", 0.0))
+            except Exception:
+                score = 0.0
+            is_ad = (label == "ad") and (score >= AI_CLASSIFY_THRESHOLD)
+            return is_ad, score, label
+    except Exception as exc:
+        _ai_calls_failed += 1
+        _ai_last_error = str(exc)[:200]
+        return False, 0.0, "error"
+
+
+async def classify_image_with_openrouter(image_path: Path) -> Tuple[bool, float, str]:
+    """
+    Returns: (is_ad, score, label) by sending an image to a multi-modal model.
+    """
+    global _ai_calls_total, _ai_calls_failed, _ai_last_error
+    _ai_calls_total += 1
+
+    import base64
+    b64 = base64.b64encode(image_path.read_bytes()).decode()
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    prompt = "判断图片是否包含广告/推广/代充/引流等信息，输出 {label, score}。"
+    payload = {
+        "model": OPENROUTER_MODEL,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                ],
+            }
+        ],
+        "response_format": {"type": "json_object"},
+        "max_tokens": 100,
+        "temperature": 0.0,
+    }
+    url = f"{OPENROUTER_API_BASE.rstrip('/')}/chat/completions"
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
             resp.raise_for_status()
             data = resp.json()
