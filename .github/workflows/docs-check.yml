@@ -1,0 +1,30 @@
+name: Docs check
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  ensure-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify docs exist
+        run: |
+          test -f README.md
+          test -f docs/USAGE.zh-CN.md
+          test -f docs/SETUP.zh-CN.md
+
+      - name: Verify README links to docs
+        run: |
+          grep -q "docs/USAGE.zh-CN.md" README.md
+          grep -q "docs/SETUP.zh-CN.md" README.md
+
+      - name: Print tip if failed
+        if: failure()
+        run: |
+          echo "请同时更新 README 与 docs/USAGE.zh-CN.md、docs/SETUP.zh-CN.md 后再提交。"

@@ -6,6 +6,10 @@
 - 命中后可删除、通知或删除并通知
 - 管理命令可动态维护规则
 
+### 文档
+- 详细使用说明见 `docs/USAGE.zh-CN.md`
+- 搭建教程见 `docs/SETUP.zh-CN.md`
+
 ### 环境准备
 1) 安装 Tesseract OCR（含中文）：
 ```bash
