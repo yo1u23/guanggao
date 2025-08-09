@@ -7,6 +7,7 @@ DEST_DIR="/opt/telegram-ad-guard-bot"
 RUN_AFTER=0
 SETUP_ARGS=()
 SETUP_INTERACTIVE=1
+SETUP_AUTO_Y=0
 INSTALL_SERVICE=0
 SERVICE_NAME="telegram-ad-guard-bot"
 SERVICE_USER="$(id -un)"
@@ -29,6 +30,7 @@ Options:
   -u SERVICE_USER        User to run service as (default: current user)
   -U                     Enable auto-update timer (systemd timer)
   -I INTERVAL            Auto-update interval (default: 15m; e.g., 1h, 6h, 1d)
+  -Y                     Fully non-interactive (pass -y to setup.sh); use env vars for token etc.
 
 Pass-through setup options (optional; if omitted, interactive wizard will prompt):
   -t TOKEN               Bot token
@@ -38,7 +40,7 @@ Pass-through setup options (optional; if omitted, interactive wizard will prompt
   -D DEFAULT_ACTION      Action on hit (default: delete_and_mute_and_notify)
 
 Examples:
-  sudo bash scripts/install_from_repo.sh -r https://github.com/yo1u23/guanggao -R -s -U -I 1h \
+  sudo bash scripts/install_from_repo.sh -r https://github.com/yo1u23/guanggao -R -s -U -I 1h -Y \
     -t 123456:ABC -a 111,222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
 
   # Minimal: interactive prompts
@@ -46,7 +48,7 @@ Examples:
 USAGE
 }
 
-while getopts ":r:d:RsUn:u:I:t:a:l:o:D:h" opt; do
+while getopts ":r:d:RsUn:u:I:YT:a:l:o:D:h" opt; do
   case $opt in
     r) REPO_URL="$OPTARG" ;;
     d) DEST_DIR="$OPTARG" ;;
@@ -56,7 +58,8 @@ while getopts ":r:d:RsUn:u:I:t:a:l:o:D:h" opt; do
     n) SERVICE_NAME="$OPTARG" ;;
     u) SERVICE_USER="$OPTARG" ;;
     I) UPDATE_INTERVAL="$OPTARG" ;;
-    t) SETUP_ARGS+=( -t "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
+    Y) SETUP_AUTO_Y=1 ;;
+    T) SETUP_ARGS+=( -t "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     a) SETUP_ARGS+=( -a "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     l) SETUP_ARGS+=( -l "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     o) SETUP_ARGS+=( -o "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
@@ -116,11 +119,14 @@ cd "$DEST_DIR"
 if [ $RUN_AFTER -eq 1 ]; then
   SETUP_ARGS+=( -r )
 fi
-if [ $SETUP_INTERACTIVE -eq 1 ]; then
+if [ $SETUP_AUTO_Y -eq 1 ]; then
+  SETUP_ARGS+=( -y )
+fi
+if [ $SETUP_INTERACTIVE -eq 1 ] && [ $SETUP_AUTO_Y -eq 0 ]; then
   info "Running interactive setup..."
   bash scripts/setup.sh "${SETUP_ARGS[@]}"
 else
-  info "Running setup with provided arguments..."
+  info "Running setup (non-interactive or pre-specified arguments)..."
   bash scripts/setup.sh "${SETUP_ARGS[@]}"
 fi
 
