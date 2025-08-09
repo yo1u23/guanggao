@@ -1,4 +1,6 @@
-## 电报广告管理机器人
+## 电报广告管理机器人（OCR + 关键词/正则）
+
+**版本（提交哈希）**: <!--VERSION_START-->unknown<!--VERSION_END-->
 
 功能：
 - 文本与图片（OCR）双通道检测
@@ -24,6 +26,8 @@ bash scripts/setup.sh \
   -d delete_and_mute_and_notify \
   -r
 ```
+更多脚本与“拉库一键部署（可选自更新定时器，默认关闭）”说明见 `docs/SETUP.zh-CN.md`。
+
 拉库一键部署（Ubuntu，默认部署远端默认分支最新版本）：
 ```bash
 # 交互式最简（默认克隆到 /opt/telegram-ad-guard-bot）
@@ -55,6 +59,9 @@ python -m app.bot
   - `/set_newcomer_buffer <秒> <none|mute|restrict_media|restrict_links>`
   - `/set_captcha <on|off> [timeout_seconds>=10]`
   - `/set_first_message_strict <on|off>`
+- 更新与版本：
+  - `/update`（仅全局管理员）
+  - `/version`（显示当前提交哈希）
 - 帮助：`/help`
 
 内联按钮（在管理员通知内）：删除、禁言10m/1h/1d、解除禁言、踢出、封禁。

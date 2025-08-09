@@ -1,0 +1,36 @@
+name: Inject commit hash into README
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  inject-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Compute commit hash
+        id: ver
+        run: echo "hash=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Inject into README
+        run: |
+          sed -i -E "s/(<!--VERSION_START-->).*(<!--VERSION_END-->)/\1${{ steps.ver.outputs.hash }}\2/" README.md
+      - name: Commit changes
+        run: |
+          if ! git diff --quiet README.md; then
+            git config user.email "action@github.com"
+            git config user.name "GitHub Action"
+            git add README.md
+            git commit -m "chore(ci): inject commit hash into README"
+          fi
+      - name: Push changes
+        if: github.event_name == 'push'
+        run: |
+          git push
+      - name: PR advice (for pull_request)
+        if: github.event_name == 'pull_request'
+        run: echo "版本占位符已更新，合并后会自动写入 main 的最新提交哈希。"
