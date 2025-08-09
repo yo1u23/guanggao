@@ -312,6 +312,25 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text(f"更新执行出错：{exc}")
 
 
+async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    def _get_git_info() -> Tuple[str, str]:
+        import subprocess
+        tag = ""
+        commit = ""
+        try:
+            tag = subprocess.check_output(["git", "describe", "--tags", "--abbrev=0"], cwd=str(Path(__file__).resolve().parent.parent)).decode().strip()
+        except Exception:
+            tag = "(no tag)"
+        try:
+            commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=str(Path(__file__).resolve().parent.parent)).decode().strip()
+        except Exception:
+            commit = "unknown"
+        return tag, commit
+
+    tag, commit = await asyncio.get_event_loop().run_in_executor(None, _get_git_info)
+    await update.message.reply_text(f"版本: {tag}\n提交: {commit}")
+
+
 # --- Detection helpers ---
 
 def _gather_message_text(message: Message) -> str:
@@ -760,6 +779,7 @@ async def main() -> None:
     app.add_handler(CommandHandler("set_captcha", cmd_set_captcha))
     app.add_handler(CommandHandler("set_first_message_strict", cmd_set_first_message_strict))
     app.add_handler(CommandHandler("update", cmd_update))
+    app.add_handler(CommandHandler("version", cmd_version))
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
