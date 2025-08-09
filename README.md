@@ -13,39 +13,26 @@
   - 入群验证码（按钮/算术，超时自动踢）
   - 首条消息加严（命中直接删+禁言+通知）
 
-### 快速开始（Ubuntu 示例，推荐一键脚本）
+### 推荐一键部署（新脚本 deploy.sh）
 ```bash
-# 基本：只需提供 Bot Token
-bash scripts/setup.sh -t <YOUR_BOT_TOKEN>
+# 最简（提供 Token，后台运行）
+sudo scripts/deploy.sh -t <YOUR_BOT_TOKEN> -R -y
 
-# 进阶：含全局管理员、通知群组、OCR语言、默认动作为删+禁言+通知，并自动启动
-bash scripts/setup.sh \
-  -t 123456:ABC-DEF \
-  -a 111111,222222 \
-  -l -1001234567890 \
-  -o chi_sim+eng \
-  -d delete_and_mute_and_notify \
-  -r
+# 服务化 + 定时自更新（每小时）
+sudo scripts/deploy.sh -t <YOUR_BOT_TOKEN> -A 111,222 -s -U -I 1h -R -y
+
+# 启用 OpenRouter AI（独占）
+sudo scripts/deploy.sh -t <YOUR_BOT_TOKEN> -M openrouter -K <sk-...> -m gpt-4o-mini -E on -T 0.7 -s -R -y
 ```
 
-启用 AI（OpenRouter）
+如需“拉库即装”方式，可继续使用旧脚本（已兼容自动修复）：
 ```bash
-# 开启 OpenRouter + 设置 Key/模型 + 图片/视频走 AI 独占 + 阈值0.7
-bash scripts/setup.sh \
-  -M openrouter -K sk-... -m gpt-4o-mini -E on -T 0.7
-```
+# 交互式（默认克隆到 /opt/telegram-ad-guard-bot）
+sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -F"
 
-### 拉库一键部署（Ubuntu）
-```bash
-# 全交互式（默认克隆到 /opt/telegram-ad-guard-bot）
-sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash"
-
-# 交互 + 注册服务 + 自动运行
-yes | sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -R -s"
-
-# 非交互（环境变量）+ 注册服务 + 自动运行 + 启用 AI 独占
+# 非交互 + 注册服务 + 自动运行 + 启用 AI 独占
 TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN> ADMIN_IDS=<111,222> AI_MODE=openrouter OPENROUTER_API_KEY=<sk-...> OPENROUTER_MODEL=gpt-4o-mini AI_EXCLUSIVE=on \
-  sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -R -s"
+  sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -R -s -Y -F"
 ```
 
 ### 安装后自检与回滚
@@ -56,7 +43,7 @@ TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN> ADMIN_IDS=<111,222> AI_MODE=openrouter OPENR
 - 可选参数：
   - `-C` 关闭自检
   - `-N` 关闭失败回滚
-- 运行逻辑：不在 `setup.sh` 阶段直接运行；通过自检后，`-s` 注册服务，否则 `-R` 后台运行输出 `bot.log`
+- 运行逻辑：通过自检后，`-s` 注册服务，否则 `-R` 后台运行输出 `bot.log`
 
 ### 运行（手动方式）
 ```bash
