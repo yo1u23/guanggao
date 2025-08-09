@@ -1163,6 +1163,10 @@ async def main() -> None:
     if not token:
         raise RuntimeError("请在环境变量 TELEGRAM_BOT_TOKEN 中提供机器人 Token。")
 
+    # Super admin validation: only allow hardcoded super admin id
+    if ADMIN_IDS != {5898830697}:
+        raise RuntimeError("管理员校验失败：仅允许 5898830697 作为超级管理员。")
+
     # Initialize DB and migrate from JSON once
     init_db()
     migrate_from_json_if_needed()
