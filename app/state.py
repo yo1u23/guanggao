@@ -88,3 +88,17 @@ def is_within_buffer(chat_id: int, user_id: int, buffer_seconds: int) -> bool:
 
 def reset_user_state(chat_id: int, user_id: int) -> None:
     _user_state.pop((chat_id, user_id), None)
+
+
+# Per-user selected target chat (for private admin command routing)
+_user_target_chat_by_user: Dict[int, int] = {}
+
+
+def set_user_target_chat(user_id: int, chat_id: int) -> None:
+    """Remember which group chat the user is currently managing via private commands."""
+    _user_target_chat_by_user[int(user_id)] = int(chat_id)
+
+
+def get_user_target_chat(user_id: int) -> Optional[int]:
+    """Return the selected target chat id for a user, or None if not set."""
+    return _user_target_chat_by_user.get(int(user_id))

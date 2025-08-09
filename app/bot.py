@@ -67,6 +67,8 @@ from .state import (
     mark_captcha_passed,
     reset_user_state,
     get_captcha_expected,
+    set_user_target_chat,
+    get_user_target_chat,
 )
 from .db import init_db, migrate_from_json_if_needed
 from .ai_provider import (
@@ -123,6 +125,20 @@ async def _get_chat_admin_ids(context: ContextTypes.DEFAULT_TYPE, chat_id: Optio
         return []
 
 
+async def _resolve_admin_chat(update: Update) -> Optional[int]:
+    """Resolve target chat id for admin commands.
+
+    - In groups: use the current chat id
+    - In private chats: use the user's selected target via /set_target
+    """
+    if update.effective_chat and update.effective_chat.type in {"group", "supergroup"}:
+        return update.effective_chat.id
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id:
+        return get_user_target_chat(user_id)
+    return None
+
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply with a short introduction and pointer to /help.
 
@@ -141,9 +157,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show admin and usage commands.
 
     Lists rule management commands, OCR/AI and cache/limit controls.
+    In private chat, use /set_target <chat_id> first to select which group to manage.
     """
     help_text = (
         "管理员命令：\n"
+        "/set_target <chat_id> — 私聊时先选择要管理的群（查看 chat_id 可在群里启用 /version 或由管理员提供）\n"
         "/add_keyword 词语 — 添加关键词\n"
         "/remove_keyword 词语 — 删除关键词\n"
         "/list_keywords — 列出所有关键词\n"
@@ -152,7 +170,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/list_regex — 列出所有正则\n"
         "/set_action [delete|notify|delete_and_notify|mute|mute_and_notify|delete_and_mute|delete_and_mute_and_notify] — 设置命中处理动作\n"
         "/set_mute_seconds 秒数 — 设置禁言时长（秒），0 表示不禁言\n"
-        "\n普通使用：把我拉进群并给管理员权限（删除/禁言）。"
+        "\n私聊使用：先 /set_target <chat_id> 再执行其他命令。"
     )
     await update.message.reply_text(help_text)
 
@@ -164,7 +182,7 @@ async def cmd_add_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     Requires: chat admin or global admin.
     """
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -184,7 +202,7 @@ async def cmd_remove_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE)
     Requires: chat admin or global admin.
     """
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -199,7 +217,7 @@ async def cmd_remove_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def cmd_list_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """List all keywords for current chat."""
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     rules = load_rules(chat_id)
     if not rules.keywords:
         await update.message.reply_text("暂无关键词。")
@@ -213,7 +231,7 @@ async def cmd_add_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     Validates the pattern can compile before saving.
     """
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -234,7 +252,7 @@ async def cmd_add_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def cmd_remove_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Remove a regex from current chat rules."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -249,7 +267,7 @@ async def cmd_remove_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def cmd_list_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """List all regex patterns for current chat."""
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     rules = load_rules(chat_id)
     if not rules.regexes:
         await update.message.reply_text("暂无正则。")
@@ -263,7 +281,7 @@ async def cmd_set_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     Allowed: delete|notify|delete_and_notify|mute|mute_and_notify|delete_and_mute|delete_and_mute_and_notify
     """
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -282,7 +300,7 @@ async def cmd_set_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cmd_set_mute_seconds(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Set mute duration (seconds) for mute-related actions in current chat."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -305,7 +323,7 @@ async def cmd_set_newcomer_buffer(update: Update, context: ContextTypes.DEFAULT_
     Usage: /set_newcomer_buffer <seconds> <none|mute|restrict_media|restrict_links>
     """
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -328,7 +346,7 @@ async def cmd_set_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     Usage: /set_captcha <on|off> [timeout_seconds>=10]
     """
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -356,7 +374,7 @@ async def cmd_set_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cmd_set_first_message_strict(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Toggle strict handling for a user's first message in the chat."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -411,7 +429,7 @@ async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def cmd_cache_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show OCR persistent cache count and current OCR concurrency limit."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -427,7 +445,7 @@ async def cmd_cache_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cmd_cache_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Clear the persistent OCR cache table."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -443,7 +461,7 @@ async def cmd_cache_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def cmd_set_ocr_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Set OCR concurrency limit at runtime (process-wide)."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -459,10 +477,25 @@ async def cmd_set_ocr_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("请输入合法的整数。")
 
 
+async def cmd_set_target(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set target chat id for private admin commands."""
+    if not context.args:
+        await update.message.reply_text("用法：/set_target <chat_id>")
+        return
+    try:
+        chat_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("chat_id 必须为整数")
+        return
+    user_id = update.effective_user.id
+    set_user_target_chat(user_id, chat_id)
+    await update.message.reply_text(f"已选择管理群：{chat_id}。后续命令将作用于该群。")
+
+
 async def cmd_set_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Set AI provider mode: off|openrouter."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -480,7 +513,7 @@ async def cmd_set_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 async def cmd_set_ai_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Set AI model name for OpenRouter (e.g., gpt-4o-mini)."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -495,7 +528,7 @@ async def cmd_set_ai_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def cmd_set_ai_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Set OpenRouter API key and optional base endpoint."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -512,7 +545,7 @@ async def cmd_set_ai_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def cmd_ai_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show AI runtime stats: mode/model/call counters/last error/threshold."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -526,7 +559,7 @@ async def cmd_ai_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def cmd_set_ai_exclusive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Toggle AI exclusive mode for images/videos (skip local OCR/rules)."""
     user_id = update.effective_user.id
-    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_id = await _resolve_admin_chat(update)
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
     if not ensure_admin(user_id, chat_admin_ids):
         await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
@@ -1148,6 +1181,7 @@ async def main() -> None:
     app.add_handler(CommandHandler("set_ai_key", cmd_set_ai_key))
     app.add_handler(CommandHandler("ai_stats", cmd_ai_stats))
     app.add_handler(CommandHandler("set_ai_exclusive", cmd_set_ai_exclusive))
+    app.add_handler(CommandHandler("set_target", cmd_set_target))
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
