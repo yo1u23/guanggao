@@ -121,3 +121,24 @@ TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN> ADMIN_IDS=<111,222> AI_MODE=openrouter OPENR
 - 升级代码后，建议重新 `pip install -r requirements.txt`
 - 数据使用 SQLite：`app/data/ad_guard.db`
 - 更改配置后重启机器人生效
+
+## 疑难排查
+- 查看服务状态与日志（systemd）：
+  - `systemctl status telegram-ad-guard-bot`
+  - `journalctl -u telegram-ad-guard-bot -n 200 --no-pager`
+- 未使用 systemd：查看部署目录 `bot.log`
+- 自检失败：
+  - 临时禁用：在拉库脚本加入 `-C`（关自检）或 `-N`（关回滚）以便保留现场定位
+  - 校验 `.env` 的 `TELEGRAM_BOT_TOKEN`
+  - 手动验证：
+    ```bash
+    cd <部署目录>
+    source .venv/bin/activate
+    python -m app.bot
+    ```
+- OCR/视频依赖：
+  ```bash
+  sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra ffmpeg
+  ```
+- AI 依赖：启用 OpenRouter 时，确认 `AI_MODE=openrouter`、`OPENROUTER_API_KEY` 与可访问 `OPENROUTER_API_BASE`
+- 群权限：为机器人授予“删除消息”“限制成员”权限

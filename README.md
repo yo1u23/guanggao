@@ -102,3 +102,15 @@ python -m app.bot
 - 默认 OCR 语言为 `chi_sim+eng`，可在 `.env` 的 `OCR_LANGUAGES` 调整。
 - `ADMIN_IDS` 留空则默认所有人可用管理命令（便于初次设置），建议设置后再使用。
 - 删除/禁言失败多半为权限不足，请确保机器人在群里有相应管理员权限。
+
+### 疑难排查
+- 日志查看：
+  - 使用 systemd：`systemctl status telegram-ad-guard-bot`，`journalctl -u telegram-ad-guard-bot -n 200 --no-pager`
+  - 未使用 systemd：查看部署目录下 `bot.log`
+- 自检失败：
+  - 可临时使用 `-C` 关闭自检、`-N` 关闭回滚定位问题
+  - 检查 `.env` 的 `TELEGRAM_BOT_TOKEN` 是否正确
+  - 手动运行：`source .venv/bin/activate && python -m app.bot`
+- OCR/视频：确认已安装 `tesseract-ocr`（含中文语言包）与 `ffmpeg`
+- AI：若启用 OpenRouter，检查 `OPENROUTER_API_KEY`、`AI_MODE=openrouter` 与网络连通性
+- 权限：确保机器人在群内具备删除与限制成员权限
