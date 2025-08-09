@@ -3,7 +3,6 @@ set -euo pipefail
 
 # Defaults
 REPO_URL=""
-BRANCH="main"
 DEST_DIR="/opt/telegram-ad-guard-bot"
 RUN_AFTER=0
 SETUP_ARGS=()
@@ -19,9 +18,10 @@ usage() {
   cat <<USAGE
 Bootstrap installer: clone repo, setup, and run as service (optional)
 
+This installer ALWAYS deploys the latest commit of the repository's default branch (remote HEAD).
+
 Options:
   -r REPO_URL            Repository URL (default: https://github.com/yo1u23/guanggao)
-  -b BRANCH              Branch to checkout (default: main)
   -d DEST_DIR            Destination directory (default: /opt/telegram-ad-guard-bot)
   -R                     Run bot after setup
   -s                     Install and enable systemd service
@@ -46,10 +46,9 @@ Examples:
 USAGE
 }
 
-while getopts ":r:b:d:RsUn:u:I:t:a:l:o:D:h" opt; do
+while getopts ":r:d:RsUn:u:I:t:a:l:o:D:h" opt; do
   case $opt in
     r) REPO_URL="$OPTARG" ;;
-    b) BRANCH="$OPTARG" ;;
     d) DEST_DIR="$OPTARG" ;;
     R) RUN_AFTER=1 ;;
     s) INSTALL_SERVICE=1 ;;
@@ -73,6 +72,21 @@ done
 info() { echo "[INFO] $*"; }
 warn() { echo "[WARN] $*"; }
 
+# Determine default branch of remote HEAD
+get_default_branch() {
+  local url="$1"
+  local ref
+  ref=$(git ls-remote --symref "$url" HEAD 2>/dev/null | awk '/^ref:/ {print $2}' | sed 's#refs/heads/##') || true
+  if [ -z "$ref" ]; then
+    echo "main"
+  else
+    echo "$ref"
+  fi
+}
+
+DEFAULT_BRANCH=$(get_default_branch "$REPO_URL")
+info "Remote default branch: $DEFAULT_BRANCH"
+
 # Ensure apt-get, git, python3, venv
 if command -v apt-get >/dev/null 2>&1; then
   info "Installing system deps (git, python3, venv, tesseract)..."
@@ -82,17 +96,18 @@ else
   warn "apt-get not found. Please install git/python3/venv/tesseract manually."
 fi
 
-# Clone or update
+# Clone or update latest default branch
 if [ -d "$DEST_DIR/.git" ]; then
-  info "Repo exists in $DEST_DIR, pulling..."
-  git -C "$DEST_DIR" fetch --all
-  git -C "$DEST_DIR" checkout "$BRANCH"
-  git -C "$DEST_DIR" pull --rebase --autostash origin "$BRANCH"
+  info "Repo exists in $DEST_DIR, syncing to latest $DEFAULT_BRANCH ..."
+  git -C "$DEST_DIR" remote set-url origin "$REPO_URL" || true
+  git -C "$DEST_DIR" fetch origin "$DEFAULT_BRANCH" --depth=1
+  git -C "$DEST_DIR" checkout -B "$DEFAULT_BRANCH" "origin/$DEFAULT_BRANCH"
+  git -C "$DEST_DIR" reset --hard "origin/$DEFAULT_BRANCH"
 else
-  info "Cloning $REPO_URL to $DEST_DIR ..."
+  info "Cloning $REPO_URL ($DEFAULT_BRANCH) to $DEST_DIR ..."
   sudo mkdir -p "$DEST_DIR"
   sudo chown -R "$(id -un)":"$(id -gn)" "$DEST_DIR"
-  git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$DEST_DIR"
+  git clone --branch "$DEFAULT_BRANCH" --depth 1 "$REPO_URL" "$DEST_DIR"
 fi
 
 cd "$DEST_DIR"
@@ -172,4 +187,4 @@ UPTMR
   info "Auto-update timer enabled. Use: systemctl list-timers | grep ${SERVICE_NAME}-update"
 fi
 
-info "Done. Repo: $REPO_URL, Branch: $BRANCH, Path: $DEST_DIR"
+info "Done. Repo: $REPO_URL, Branch: $DEFAULT_BRANCH, Path: $DEST_DIR"

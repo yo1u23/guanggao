@@ -82,7 +82,6 @@ sudo bash scripts/install_from_repo.sh
 # 带参数（自动运行并注册 systemd 服务 + 启用自更新定时器每小时一次）
 sudo bash scripts/install_from_repo.sh \
   -r https://github.com/yo1u23/guanggao \
-  -b main \
   -d /opt/telegram-ad-guard-bot \
   -R -s -U -I 1h -n telegram-ad-guard-bot -u ubuntu \
   -t 123456:ABC-DEF -a 111111,222222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
