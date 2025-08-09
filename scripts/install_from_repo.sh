@@ -11,6 +11,9 @@ SETUP_INTERACTIVE=1
 INSTALL_SERVICE=0
 SERVICE_NAME="telegram-ad-guard-bot"
 SERVICE_USER="$(id -un)"
+# Auto update
+INSTALL_AUTO_UPDATE=0
+UPDATE_INTERVAL="15m"  # supports systemd time: e.g. 15m, 1h, 1d
 
 usage() {
   cat <<USAGE
@@ -24,6 +27,8 @@ Options:
   -s                     Install and enable systemd service
   -n SERVICE_NAME        Systemd service name (default: telegram-ad-guard-bot)
   -u SERVICE_USER        User to run service as (default: current user)
+  -U                     Enable auto-update timer (systemd timer)
+  -I INTERVAL            Auto-update interval (default: 15m; e.g., 1h, 6h, 1d)
 
 Pass-through setup options (optional; if omitted, interactive wizard will prompt):
   -t TOKEN               Bot token
@@ -33,7 +38,7 @@ Pass-through setup options (optional; if omitted, interactive wizard will prompt
   -D DEFAULT_ACTION      Action on hit (default: delete_and_mute_and_notify)
 
 Examples:
-  sudo bash scripts/install_from_repo.sh -r https://github.com/yo1u23/guanggao -R -s \
+  sudo bash scripts/install_from_repo.sh -r https://github.com/yo1u23/guanggao -R -s -U -I 1h \
     -t 123456:ABC -a 111,222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
 
   # Minimal: interactive prompts
@@ -41,15 +46,17 @@ Examples:
 USAGE
 }
 
-while getopts ":r:b:d:Rs n:u:t:a:l:o:D:h" opt; do
+while getopts ":r:b:d:RsUn:u:I:t:a:l:o:D:h" opt; do
   case $opt in
     r) REPO_URL="$OPTARG" ;;
     b) BRANCH="$OPTARG" ;;
     d) DEST_DIR="$OPTARG" ;;
     R) RUN_AFTER=1 ;;
     s) INSTALL_SERVICE=1 ;;
+    U) INSTALL_AUTO_UPDATE=1 ;;
     n) SERVICE_NAME="$OPTARG" ;;
     u) SERVICE_USER="$OPTARG" ;;
+    I) UPDATE_INTERVAL="$OPTARG" ;;
     t) SETUP_ARGS+=( -t "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     a) SETUP_ARGS+=( -a "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     l) SETUP_ARGS+=( -l "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
@@ -127,6 +134,42 @@ SERVICE
   sudo systemctl enable "$SERVICE_NAME"
   sudo systemctl restart "$SERVICE_NAME" || sudo systemctl start "$SERVICE_NAME"
   info "Service '$SERVICE_NAME' started. Use: systemctl status $SERVICE_NAME"
+fi
+
+# Install auto-update timer (optional)
+if [ $INSTALL_AUTO_UPDATE -eq 1 ]; then
+  UPDATE_SVC="/etc/systemd/system/${SERVICE_NAME}-update.service"
+  UPDATE_TMR="/etc/systemd/system/${SERVICE_NAME}-update.timer"
+  info "Installing auto-update timer: every $UPDATE_INTERVAL"
+  sudo bash -c "cat > '$UPDATE_SVC'" <<UPSVC
+[Unit]
+Description=Auto update for Telegram Ad Guard Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=$DEST_DIR
+ExecStart=/bin/bash $DEST_DIR/scripts/self_update.sh
+User=$SERVICE_USER
+UPSVC
+
+  sudo bash -c "cat > '$UPDATE_TMR'" <<UPTMR
+[Unit]
+Description=Run ${SERVICE_NAME}-update.service every $UPDATE_INTERVAL
+
+[Timer]
+OnUnitActiveSec=$UPDATE_INTERVAL
+AccuracySec=1s
+Unit=${SERVICE_NAME}-update.service
+
+[Install]
+WantedBy=timers.target
+UPTMR
+  sudo systemctl daemon-reload
+  sudo systemctl enable "${SERVICE_NAME}-update.timer"
+  sudo systemctl restart "${SERVICE_NAME}-update.timer" || sudo systemctl start "${SERVICE_NAME}-update.timer"
+  info "Auto-update timer enabled. Use: systemctl list-timers | grep ${SERVICE_NAME}-update"
 fi
 
 info "Done. Repo: $REPO_URL, Branch: $BRANCH, Path: $DEST_DIR"

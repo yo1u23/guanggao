@@ -79,14 +79,17 @@ python -m app.bot
 # 交互式最简（默认拉取 main 分支到 /opt/telegram-ad-guard-bot）
 sudo bash scripts/install_from_repo.sh
 
-# 带参数（自动运行并注册 systemd 服务）
+# 带参数（自动运行并注册 systemd 服务 + 启用自更新定时器每小时一次）
 sudo bash scripts/install_from_repo.sh \
   -r https://github.com/yo1u23/guanggao \
   -b main \
   -d /opt/telegram-ad-guard-bot \
-  -R -s -n telegram-ad-guard-bot -u ubuntu \
+  -R -s -U -I 1h -n telegram-ad-guard-bot -u ubuntu \
   -t 123456:ABC-DEF -a 111111,222222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
 ```
+- `-U` 启用自更新定时器，`-I` 指定间隔（如 15m/1h/6h/1d）。
+- 自更新执行 `scripts/self_update.sh`，拉取最新代码、必要时重装依赖，并尝试重启服务。
+- 查看定时器：`systemctl list-timers | grep telegram-ad-guard-bot-update`
 
 ## 部署建议
 - 使用 `systemd` 或 `pm2` 守护进程运行，崩溃自动重启

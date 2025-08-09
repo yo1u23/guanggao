@@ -24,7 +24,7 @@ bash scripts/setup.sh \
   -d delete_and_mute_and_notify \
   -r
 ```
-更多脚本与“拉库一键部署”说明见 `docs/SETUP.zh-CN.md`。
+更多脚本与“拉库一键部署（含自更新定时器）”说明见 `docs/SETUP.zh-CN.md`。
 
 ### 运行（手动方式）
 ```bash
