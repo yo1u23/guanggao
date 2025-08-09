@@ -5,8 +5,8 @@
 - Python 3.10+（项目当前运行于 Python 3.13）
 - 可访问 Telegram API 的网络环境
 
-## 系统依赖安装（OCR 必需）
-建议 Debian/Ubuntu 系列执行：
+## 系统依赖安装（以 Ubuntu 为例，OCR 必需）
+建议 Ubuntu/Debian 系列执行：
 ```bash
 bash scripts/install_tesseract_ocr.sh
 ```

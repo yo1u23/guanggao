@@ -10,7 +10,7 @@
   - 入群验证码（按钮/算术，超时自动踢）
   - 首条消息加严（命中直接删+禁言+通知）
 
-### 快速开始（推荐一键脚本）
+### 快速开始（Ubuntu 示例，推荐一键脚本）
 ```bash
 # 基本：只需提供 Bot Token
 bash scripts/setup.sh -t <YOUR_BOT_TOKEN>

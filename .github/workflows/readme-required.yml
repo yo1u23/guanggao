@@ -1,0 +1,47 @@
+name: Require README update
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  check-readme-changed:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed files (PR)
+        if: github.event_name == 'pull_request'
+        id: diff_pr
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          echo "changed<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Determine changed files (push)
+        if: github.event_name == 'push'
+        id: diff_push
+        run: |
+          BEFORE=${{ github.event.before }}
+          AFTER=${{ github.sha }}
+          git fetch origin --depth=1
+          CHANGED=$(git diff --name-only "$BEFORE" "$AFTER")
+          echo "changed<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGED" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Ensure README.md modified
+        run: |
+          CHANGED_FILES="${{ steps.diff_pr.outputs.changed || steps.diff_push.outputs.changed }}"
+          echo "Changed files:\n$CHANGED_FILES"
+          echo "$CHANGED_FILES" | grep -q '^README\.md$\|/README\.md$' || {
+            echo 'README.md 未修改。本仓库要求每次提交/PR 必须更新 README.md。';
+            exit 1;
+          }
