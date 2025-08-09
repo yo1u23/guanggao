@@ -95,6 +95,23 @@ TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN> ADMIN_IDS=<111,222> AI_MODE=openrouter OPENR
 - 自更新执行 `scripts/self_update.sh`，拉取最新代码、必要时重装依赖，并尝试重启服务。
 - 查看定时器：`systemctl list-timers | grep telegram-ad-guard-bot-update`
 
+## 安装后自检与回滚
+- 默认开启自检：
+  - 检查虚拟环境 Python 是否存在（`.venv/bin/python`）
+  - `.env` 文件包含 `TELEGRAM_BOT_TOKEN`
+  - 编译 `app` 目录与导入 `app.bot` 成功
+  - 如缺失 `tesseract` 或 `ffmpeg`，将给出提示（不阻塞安装）
+- 自检失败行为：
+  - 目标目录原本存在：回滚到安装前的 commit，尝试重装依赖并重启服务
+  - 全新安装：清理 `DEST_DIR`
+- 可选参数：
+  - `-C` 关闭自检（不建议）
+  - `-N` 关闭失败回滚（用于排查问题时保留现场）
+- 运行逻辑：
+  - 不在 `setup.sh` 阶段直接运行；自检通过后
+    - 指定 `-s` 则注册并启动 systemd 服务
+    - 未指定 `-s` 但提供 `-R` 时后台运行，日志写入 `DEST_DIR/bot.log`
+
 ## 部署建议
 - 使用 `systemd` 或 `pm2` 守护进程运行，崩溃自动重启
 - 记录日志（可以使用 shell 重定向或日志系统）

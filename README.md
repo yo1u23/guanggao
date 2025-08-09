@@ -48,6 +48,16 @@ TELEGRAM_BOT_TOKEN=<YOUR_BOT_TOKEN> ADMIN_IDS=<111,222> AI_MODE=openrouter OPENR
   sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/install_from_repo.sh | sudo bash -s -- -R -s"
 ```
 
+### 安装后自检与回滚
+- 默认开启自检：检查 `.venv/bin/python`、`.env` 里 `TELEGRAM_BOT_TOKEN`、编译与导入 `app.bot`
+- 自检失败：
+  - 若目标目录存在旧版本，自动回滚至安装前 commit，并尝试重装依赖与重启服务
+  - 若为全新安装，自动清理 `DEST_DIR`
+- 可选参数：
+  - `-C` 关闭自检
+  - `-N` 关闭失败回滚
+- 运行逻辑：不在 `setup.sh` 阶段直接运行；通过自检后，`-s` 注册服务，否则 `-R` 后台运行输出 `bot.log`
+
 ### 运行（手动方式）
 ```bash
 python -m app.bot
