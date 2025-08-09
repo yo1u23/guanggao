@@ -1,6 +1,6 @@
 ## 电报广告管理机器人（OCR + 关键词/正则）
 
-**版本（提交哈希）**: <!--VERSION_START-->2025-08-09+c3f4cda<!--VERSION_END-->
+**版本（提交哈希）**: <!--VERSION_START-->2025-08-09+9e3e4fd<!--VERSION_END-->
 
 功能：
 - 文本与图片（OCR）双通道检测；视频首帧 OCR + pHash 去重
