@@ -674,6 +674,76 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _handle_action(update, context, combined_text, hit_keywords, hit_regexes)
 
 
+async def on_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = update.effective_message
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    text_parts: List[str] = []
+    if message.caption:
+        text_parts.append(message.caption)
+
+    try:
+        video = message.video
+        if not video:
+            return
+        file = await video.get_file()
+        # 1) Try memory cache by unique id
+        cached = ocr_text_cache.get(file.file_unique_id)
+        if cached is not None:
+            text_parts.append(cached)
+        else:
+            # 2) Try DB cache by unique id
+            try:
+                db_text = get_ocr_cache(file.file_unique_id)
+                if db_text:
+                    ocr_text_cache.set(file.file_unique_id, db_text)
+                    text_parts.append(db_text)
+                else:
+                    # 3) Download video, extract first frame, compute phash and try DB cache by phash
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        vpath = Path(tmpdir) / f"video_{file.file_unique_id}.mp4"
+                        fpath = Path(tmpdir) / f"frame_{file.file_unique_id}.jpg"
+                        await file.download_to_drive(custom_path=str(vpath))
+                        if extract_first_frame(vpath, fpath):
+                            phash = compute_image_phash(fpath)
+                            if phash:
+                                ph_text = get_ocr_cache(phash)
+                                if ph_text:
+                                    # cache hit by phash
+                                    ocr_text_cache.set(file.file_unique_id, ph_text)
+                                    text_parts.append(ph_text)
+                                else:
+                                    # 4) OCR the frame under limiter
+                                    try:
+                                        async with ocr_limited():
+                                            ocr_text = extract_text_from_image(fpath, OCR_LANGUAGES)
+                                        if ocr_text:
+                                            text_parts.append(ocr_text)
+                                            # store under unique id and phash if available
+                                            ocr_text_cache.set(file.file_unique_id, ocr_text)
+                                            try:
+                                                set_ocr_cache(file.file_unique_id, ocr_text)
+                                                if phash:
+                                                    set_ocr_cache(phash, ocr_text)
+                                            except Exception:
+                                                pass
+                                    except OCRError as e:
+                                        logger.error("OCR 不可用：%s", e)
+                        else:
+                            logger.warning("无法提取视频首帧")
+            except Exception as exc:
+                logger.warning("处理视频失败: %s", exc)
+    except Exception as exc:
+        logger.warning("下载或处理视频失败: %s", exc)
+
+    combined_text = "\n".join([t for t in text_parts if t]).strip()
+    if not combined_text:
+        return
+
+    matched, hit_keywords, hit_regexes = _match_rules(combined_text, chat_id)
+    if matched:
+        await _handle_action(update, context, combined_text, hit_keywords, hit_regexes)
+
+
 def _parse_cb(data: str) -> Optional[dict]:
     # a|<code>|<chat>|<user>|<msg>|[secs]
     try:
@@ -785,6 +855,7 @@ async def main() -> None:
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
+    app.add_handler(MessageHandler(filters.VIDEO, on_video))
     app.add_handler(CallbackQueryHandler(on_admin_action, pattern=r"^a\|"))
     app.add_handler(CallbackQueryHandler(on_captcha_click, pattern=r"^c\|"))
     app.add_handler(ChatMemberHandler(on_chat_member, ChatMemberHandler.CHAT_MEMBER))
