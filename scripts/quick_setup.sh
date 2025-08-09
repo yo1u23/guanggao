@@ -220,9 +220,18 @@ write_env(){
   log_hdr "⚙️ 配置环境变量"
   touch "$DEST_DIR/.env"
   if [[ $NON_INTERACTIVE -ne 1 ]]; then
-    [[ -z "$TOKEN" ]] && read -r -p "请输入 Telegram Bot Token: " TOKEN
-    read -r -p "全局管理员（逗号分隔，可留空）: " ADMIN_IDS || true
-    read -r -p "通知 Chat IDs（逗号分隔，可留空）: " ADMIN_LOG_CHAT_IDS || true
+    if [[ -z "$TOKEN" ]]; then
+      if [[ -r /dev/tty ]]; then
+        read -r -p "请输入 Telegram Bot Token: " TOKEN </dev/tty || true
+      else
+        log_err "检测到通过管道执行，无法交互。请改用 -y 并通过 --token 或 TELEGRAM_BOT_TOKEN 提供 Token。"
+        exit 2
+      fi
+    fi
+    if [[ -r /dev/tty ]]; then
+      read -r -p "全局管理员（逗号分隔，可留空）: " ADMIN_IDS </dev/tty || true
+      read -r -p "通知 Chat IDs（逗号分隔，可留空）: " ADMIN_LOG_CHAT_IDS </dev/tty || true
+    fi
   fi
   set_env_kv TELEGRAM_BOT_TOKEN "$TOKEN"
   set_env_kv ADMIN_IDS "$ADMIN_IDS"
