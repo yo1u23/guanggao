@@ -1,6 +1,10 @@
 ## 电报广告管理机器人（OCR + 关键词/正则）
 
+<<<<<<< HEAD
 **版本（提交哈希）**: <!--VERSION_START-->2025-08-09+2729028<!--VERSION_END-->
+=======
+**版本（提交哈希）**: <!--VERSION_START-->2025-08-09+5d3a3b8<!--VERSION_END-->
+>>>>>>> 3658b39 (docs: update README style to include curl|bash quick_setup entrypoint)
 
 功能：
 - 文本与图片（OCR）双通道检测；视频首帧 OCR + pHash 去重
@@ -12,6 +16,16 @@
   - 新人缓冲（加入后 N 秒内禁言或限制发图/链接）
   - 入群验证码（按钮/算术，超时自动踢）
   - 首条消息加严（命中直接删+禁言+通知）
+
+### 一键安装（推荐，curl | bash）
+```bash
+# 交互式（会询问 Token/管理员等）
+sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/quick_setup.sh | sudo bash"
+
+# 非交互 + 注册服务 + 自动运行（将 <TOKEN> 替换为你的 Bot Token）
+TELEGRAM_BOT_TOKEN=<TOKEN> ADMIN_IDS=111,222 \
+  sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/quick_setup.sh | sudo bash -s -- -y -s -R"
+```
 
 ### 推荐一键部署（新脚本 deploy.sh）
 ```bash
