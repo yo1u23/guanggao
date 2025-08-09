@@ -1,3 +1,14 @@
+"""Telegram ad management bot.
+
+Core responsibilities:
+- Manage per-chat rules (keywords/regex/actions/mute and newcomer governance)
+- OCR text from images and video keyframes, with caching and pHash dedup
+- Optional AI classification via OpenRouter for text/image/video
+- Admin commands to configure rules, OCR/AI limits, and caches
+- Inline buttons for quick moderation (delete/mute/unmute/kick/ban)
+
+This module favors docstrings for functions and concise inline comments.
+"""
 import asyncio
 import logging
 import re

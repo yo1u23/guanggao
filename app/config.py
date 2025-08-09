@@ -1,3 +1,7 @@
+"""Global configuration: paths, environment, and constants.
+
+Loads .env if present. Exposes directories and runtime flags used by modules.
+"""
 import os
 from pathlib import Path
 from typing import Set

@@ -1,3 +1,9 @@
+"""Per-chat rule storage backed by SQLite via db helpers.
+
+This module exposes a Rules dataclass and CRUD operations for per-chat
+keywords, regexes, actions, and newcomer governance, mapping to the `rules`
+table. It validates and normalizes inputs and hides persistence details.
+"""
 import json
 from dataclasses import dataclass, asdict
 from typing import List, Dict, Any, Optional

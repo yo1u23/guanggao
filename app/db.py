@@ -1,3 +1,12 @@
+"""SQLite persistence for rules, user_state and OCR cache.
+
+Tables:
+- rules: per-chat configuration
+- user_state: newcomer/captcha runtime state persistence
+- ocr_cache: persistent OCR text cache (by unique id or pHash)
+
+This module exposes small helpers for each table to keep other modules clean.
+"""
 import json
 import sqlite3
 from pathlib import Path

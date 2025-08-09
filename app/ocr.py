@@ -1,3 +1,8 @@
+"""OCR utilities using Tesseract.
+
+extract_text_from_image opens the image with PIL, converts to RGB and sends to
+pytesseract. assert_tesseract_available validates the binary is installed.
+"""
 from pathlib import Path
 from typing import Optional
 
