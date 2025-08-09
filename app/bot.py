@@ -44,7 +44,7 @@ from .config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, OCR_LANGUAGES, ADMIN_LOG_CHAT
 from .ocr import extract_text_from_image, OCRError
 from .text import normalize_text, contains_link
 from .cache import ocr_text_cache
-from .db import get_ocr_cache, set_ocr_cache
+from .db import get_ocr_cache, set_ocr_cache, upsert_known_chat, list_known_chats
 from .video import extract_first_frame, compute_image_phash
 from .limiter import ocr_limited, get_ocr_limit, set_ocr_limit
 from .storage import (
@@ -867,6 +867,12 @@ async def on_text_or_caption(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     Flow: newcomer checks → local rules → AI fallback (if enabled) → action.
     """
+    # Track known chats
+    if update.effective_chat:
+        try:
+            upsert_known_chat(update.effective_chat.id, update.effective_chat.title or str(update.effective_chat.id), update.effective_chat.type or "unknown")
+        except Exception:
+            pass
     message = update.effective_message
     chat_id = update.effective_chat.id if update.effective_chat else None
     user_id = update.effective_user.id if update.effective_user else None
@@ -915,6 +921,11 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     - Otherwise, attempt local OCR with caching and DB persistence.
     - Combine caption and OCR text before rule/AI checks.
     """
+    if update.effective_chat:
+        try:
+            upsert_known_chat(update.effective_chat.id, update.effective_chat.title or str(update.effective_chat.id), update.effective_chat.type or "unknown")
+        except Exception:
+            pass
     message = update.effective_message
     chat_id = update.effective_chat.id if update.effective_chat else None
     text_parts: List[str] = []
@@ -976,6 +987,11 @@ async def on_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     - In AI exclusive mode, extract first frame and send to AI.
     - Otherwise, extract first frame and perform local OCR with pHash cache.
     """
+    if update.effective_chat:
+        try:
+            upsert_known_chat(update.effective_chat.id, update.effective_chat.title or str(update.effective_chat.id), update.effective_chat.type or "unknown")
+        except Exception:
+            pass
     message = update.effective_message
     chat_id = update.effective_chat.id if update.effective_chat else None
     text_parts: List[str] = []
@@ -1182,12 +1198,14 @@ async def main() -> None:
     app.add_handler(CommandHandler("ai_stats", cmd_ai_stats))
     app.add_handler(CommandHandler("set_ai_exclusive", cmd_set_ai_exclusive))
     app.add_handler(CommandHandler("set_target", cmd_set_target))
+    app.add_handler(CommandHandler("pick_target", cmd_pick_target))
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
     app.add_handler(MessageHandler(filters.VIDEO, on_video))
     app.add_handler(CallbackQueryHandler(on_admin_action, pattern=r"^a\|"))
     app.add_handler(CallbackQueryHandler(on_captcha_click, pattern=r"^c\|"))
+    app.add_handler(CallbackQueryHandler(on_pick_target, pattern=r"^t\|"))
     app.add_handler(ChatMemberHandler(on_chat_member, ChatMemberHandler.CHAT_MEMBER))
 
     logger.info("机器人已启动。按 Ctrl+C 结束。")

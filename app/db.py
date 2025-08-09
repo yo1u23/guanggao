@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS ocr_cache (
   text TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS known_chats (
+  chat_id INTEGER PRIMARY KEY,
+  title TEXT NOT NULL,
+  chat_type TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
 """
 
 
@@ -317,3 +324,34 @@ def clear_ocr_cache() -> None:
     """Delete all rows from OCR cache (irreversible)."""
     with _connect() as conn:
         conn.execute("DELETE FROM ocr_cache")
+
+
+# --- Known chats ---
+
+def upsert_known_chat(chat_id: int, title: str, chat_type: str) -> None:
+    """Insert or update a known chat record with latest title and timestamp."""
+    import time
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO known_chats(chat_id, title, chat_type, updated_at)
+            VALUES(?, ?, ?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+              title=excluded.title,
+              chat_type=excluded.chat_type,
+              updated_at=excluded.updated_at
+            """,
+            (int(chat_id), str(title or ""), str(chat_type or "unknown"), int(time.time())),
+        )
+
+
+def list_known_chats(limit: int = 30, offset: int = 0) -> list[dict]:
+    """Return recent known chats sorted by updated_at desc."""
+    with _connect() as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(
+            "SELECT chat_id, title, chat_type, updated_at FROM known_chats ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            (int(limit), int(offset)),
+        )
+        rows = cur.fetchall()
+        return [{k: row[k] for k in row.keys()} for row in rows]
