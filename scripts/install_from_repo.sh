@@ -39,16 +39,24 @@ Pass-through setup options (optional; if omitted, interactive wizard will prompt
   -o OCR_LANGUAGES       Tesseract languages (default: chi_sim+eng)
   -D DEFAULT_ACTION      Action on hit (default: delete_and_mute_and_notify)
 
+AI (OpenRouter) pass-through options:
+  -M AI_MODE             off|openrouter
+  -K OPENROUTER_API_KEY  API key
+  -B OPENROUTER_API_BASE API base (default: https://openrouter.ai/api/v1)
+  -m OPENROUTER_MODEL    Model name (e.g., gpt-4o-mini)
+  -E AI_EXCLUSIVE        on|off
+  -T AI_THRESHOLD        0..1
+
 Examples:
   sudo bash scripts/install_from_repo.sh -r https://github.com/yo1u23/guanggao -R -s -U -I 1h -Y \
-    -t 123456:ABC -a 111,222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
+    -t 123456:ABC -a 111,222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify -M openrouter -K sk-... -m gpt-4o-mini -E on -T 0.7
 
   # Minimal: interactive prompts
   sudo bash scripts/install_from_repo.sh
 USAGE
 }
 
-while getopts ":r:d:RsUn:u:I:YT:a:l:o:D:h" opt; do
+while getopts ":r:d:RsUn:u:I:Yt:a:l:o:D:M:K:B:m:E:T:h" opt; do
   case $opt in
     r) REPO_URL="$OPTARG" ;;
     d) DEST_DIR="$OPTARG" ;;
@@ -59,11 +67,17 @@ while getopts ":r:d:RsUn:u:I:YT:a:l:o:D:h" opt; do
     u) SERVICE_USER="$OPTARG" ;;
     I) UPDATE_INTERVAL="$OPTARG" ;;
     Y) SETUP_AUTO_Y=1 ;;
-    T) SETUP_ARGS+=( -t "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
+    t) SETUP_ARGS+=( -t "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     a) SETUP_ARGS+=( -a "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     l) SETUP_ARGS+=( -l "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     o) SETUP_ARGS+=( -o "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     D) SETUP_ARGS+=( -d "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
+    M) SETUP_ARGS+=( -M "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
+    K) SETUP_ARGS+=( -K "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
+    B) SETUP_ARGS+=( -B "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
+    m) SETUP_ARGS+=( -m "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
+    E) SETUP_ARGS+=( -E "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
+    T) SETUP_ARGS+=( -T "$OPTARG" ); SETUP_INTERACTIVE=0 ;;
     h) usage; exit 0 ;;
     \?) echo "Unknown option -$OPTARG"; usage; exit 2 ;;
     :) echo "Option -$OPTARG requires an argument"; usage; exit 2 ;;
@@ -92,11 +106,11 @@ info "Remote default branch: $DEFAULT_BRANCH"
 
 # Ensure apt-get, git, python3, venv
 if command -v apt-get >/dev/null 2>&1; then
-  info "Installing system deps (git, python3, venv, tesseract)..."
+  info "Installing system deps (git, python3, venv, tesseract, ffmpeg)..."
   sudo apt-get update -y
-  sudo apt-get install -y git python3 python3-venv tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra || true
+  sudo apt-get install -y git python3 python3-venv tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra ffmpeg || true
 else
-  warn "apt-get not found. Please install git/python3/venv/tesseract manually."
+  warn "apt-get not found. Please install git/python3/venv/tesseract/ffmpeg manually."
 fi
 
 # Clone or update latest default branch
@@ -132,9 +146,12 @@ fi
 
 # Install systemd service (optional)
 if [ $INSTALL_SERVICE -eq 1 ]; then
-  SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-  info "Installing systemd service: $SERVICE_FILE (User=$SERVICE_USER)"
-  sudo bash -c "cat > '$SERVICE_FILE'" <<SERVICE
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "systemctl not found; skipping service installation."
+  else
+    SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+    info "Installing systemd service: $SERVICE_FILE (User=$SERVICE_USER)"
+    sudo bash -c "cat > '$SERVICE_FILE'" <<SERVICE
 [Unit]
 Description=Telegram Ad Guard Bot
 After=network-online.target
@@ -151,18 +168,22 @@ User=$SERVICE_USER
 [Install]
 WantedBy=multi-user.target
 SERVICE
-  sudo systemctl daemon-reload
-  sudo systemctl enable "$SERVICE_NAME"
-  sudo systemctl restart "$SERVICE_NAME" || sudo systemctl start "$SERVICE_NAME"
-  info "Service '$SERVICE_NAME' started. Use: systemctl status $SERVICE_NAME"
+    sudo systemctl daemon-reload
+    sudo systemctl enable "$SERVICE_NAME"
+    sudo systemctl restart "$SERVICE_NAME" || sudo systemctl start "$SERVICE_NAME"
+    info "Service '$SERVICE_NAME' started. Use: systemctl status $SERVICE_NAME"
+  fi
 fi
 
 # Install auto-update timer (optional)
 if [ $INSTALL_AUTO_UPDATE -eq 1 ]; then
-  UPDATE_SVC="/etc/systemd/system/${SERVICE_NAME}-update.service"
-  UPDATE_TMR="/etc/systemd/system/${SERVICE_NAME}-update.timer"
-  info "Installing auto-update timer: every $UPDATE_INTERVAL"
-  sudo bash -c "cat > '$UPDATE_SVC'" <<UPSVC
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "systemctl not found; skipping auto-update timer installation."
+  else
+    UPDATE_SVC="/etc/systemd/system/${SERVICE_NAME}-update.service"
+    UPDATE_TMR="/etc/systemd/system/${SERVICE_NAME}-update.timer"
+    info "Installing auto-update timer: every $UPDATE_INTERVAL"
+    sudo bash -c "cat > '$UPDATE_SVC'" <<UPSVC
 [Unit]
 Description=Auto update for Telegram Ad Guard Bot
 After=network-online.target
@@ -175,22 +196,24 @@ ExecStart=/bin/bash $DEST_DIR/scripts/self_update.sh
 User=$SERVICE_USER
 UPSVC
 
-  sudo bash -c "cat > '$UPDATE_TMR'" <<UPTMR
+    sudo bash -c "cat > '$UPDATE_TMR'" <<UPTMR
 [Unit]
 Description=Run ${SERVICE_NAME}-update.service every $UPDATE_INTERVAL
 
 [Timer]
 OnUnitActiveSec=$UPDATE_INTERVAL
 AccuracySec=1s
+Persistent=true
 Unit=${SERVICE_NAME}-update.service
 
 [Install]
 WantedBy=timers.target
 UPTMR
-  sudo systemctl daemon-reload
-  sudo systemctl enable "${SERVICE_NAME}-update.timer"
-  sudo systemctl restart "${SERVICE_NAME}-update.timer" || sudo systemctl start "${SERVICE_NAME}-update.timer"
-  info "Auto-update timer enabled. Use: systemctl list-timers | grep ${SERVICE_NAME}-update"
+    sudo systemctl daemon-reload
+    sudo systemctl enable "${SERVICE_NAME}-update.timer"
+    sudo systemctl restart "${SERVICE_NAME}-update.timer" || sudo systemctl start "${SERVICE_NAME}-update.timer"
+    info "Auto-update timer enabled. Use: systemctl list-timers | grep ${SERVICE_NAME}-update"
+  fi
 fi
 
 info "Done. Repo: $REPO_URL, Branch: $DEFAULT_BRANCH, Path: $DEST_DIR"
