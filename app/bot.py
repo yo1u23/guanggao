@@ -110,6 +110,12 @@ async def _get_chat_admin_ids(context: ContextTypes.DEFAULT_TYPE, chat_id: Optio
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reply with a short introduction and pointer to /help.
+
+    Args:
+        update: Incoming update containing the command message
+        context: Telegram context
+    """
     await update.message.reply_text(
         "你好！我是广告管理机器人。\n"
         "- 识别文本与图片中的关键词/正则\n"
@@ -118,6 +124,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show admin and usage commands.
+
+    Lists rule management commands, OCR/AI and cache/limit controls.
+    """
     help_text = (
         "管理员命令：\n"
         "/add_keyword 词语 — 添加关键词\n"
@@ -477,6 +487,11 @@ async def cmd_set_ai_exclusive(update: Update, context: ContextTypes.DEFAULT_TYP
 # --- Detection helpers ---
 
 def _gather_message_text(message: Message) -> str:
+    """Collect text and caption from a message.
+
+    Returns a single string combining message.text and message.caption with
+    newline separation, trimmed at edges.
+    """
     parts: List[str] = []
     if message.text:
         parts.append(message.text)
@@ -486,6 +501,11 @@ def _gather_message_text(message: Message) -> str:
 
 
 def _match_rules(text: str, chat_id: Optional[int]) -> Tuple[bool, List[str], List[str]]:
+    """Match normalized keywords and regexes against provided text.
+
+    Returns a tuple of (matched, hit_keywords, hit_regexes).
+    Normalization mitigates common obfuscation (e.g., leet, zero-width).
+    """
     rules = load_rules(chat_id)
     hit_keywords: List[str] = []
     hit_regexes: List[str] = []
@@ -781,6 +801,12 @@ async def on_text_or_caption(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle incoming photo messages.
+
+    - If AI exclusive mode is enabled, send the image to AI and act on result.
+    - Otherwise, attempt local OCR with caching and DB persistence.
+    - Combine caption and OCR text before rule/AI checks.
+    """
     message = update.effective_message
     chat_id = update.effective_chat.id if update.effective_chat else None
     text_parts: List[str] = []
@@ -837,6 +863,11 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def on_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle incoming video messages.
+
+    - In AI exclusive mode, extract first frame and send to AI.
+    - Otherwise, extract first frame and perform local OCR with pHash cache.
+    """
     message = update.effective_message
     chat_id = update.effective_chat.id if update.effective_chat else None
     text_parts: List[str] = []
