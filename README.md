@@ -24,6 +24,18 @@ bash scripts/setup.sh \
   -d delete_and_mute_and_notify \
   -r
 ```
+拉库一键部署（Ubuntu，默认部署远端默认分支最新版本）：
+```bash
+# 交互式最简（默认克隆到 /opt/telegram-ad-guard-bot）
+sudo bash scripts/install_from_repo.sh
+
+# 带参数（自动运行与注册服务，可选自更新定时器）
+sudo bash scripts/install_from_repo.sh \
+  -r https://github.com/yo1u23/guanggao \
+  -d /opt/telegram-ad-guard-bot \
+  -R -s -U -I 1h -n telegram-ad-guard-bot -u ubuntu \
+  -t 123456:ABC-DEF -a 111111,222222 -l -1001234567890 -o chi_sim+eng -D delete_and_mute_and_notify
+```
 更多脚本与“拉库一键部署（可选自更新定时器，默认关闭）”说明见 `docs/SETUP.zh-CN.md`。
 
 ### 运行（手动方式）
