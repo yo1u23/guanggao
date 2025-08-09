@@ -232,3 +232,15 @@ def set_ocr_cache(key: str, text: str) -> None:
             "INSERT INTO ocr_cache(key, text, created_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET text=excluded.text, created_at=excluded.created_at",
             (key, text, int(time.time())),
         )
+
+
+def count_ocr_cache() -> int:
+    with _connect() as conn:
+        cur = conn.execute("SELECT COUNT(1) FROM ocr_cache")
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+
+
+def clear_ocr_cache() -> None:
+    with _connect() as conn:
+        conn.execute("DELETE FROM ocr_cache")

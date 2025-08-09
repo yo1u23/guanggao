@@ -35,7 +35,7 @@ from .text import normalize_text, contains_link
 from .cache import ocr_text_cache
 from .db import get_ocr_cache, set_ocr_cache
 from .video import extract_first_frame, compute_image_phash
-from .limiter import ocr_limited
+from .limiter import ocr_limited, get_ocr_limit, set_ocr_limit
 from .storage import (
     load_rules,
     add_keyword,
@@ -326,6 +326,54 @@ async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     commit = await asyncio.get_event_loop().run_in_executor(None, _get_commit)
     await update.message.reply_text(f"提交: {commit}")
+
+
+async def cmd_cache_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    try:
+        from .db import count_ocr_cache
+        cnt = count_ocr_cache()
+        await update.message.reply_text(f"OCR 缓存条数（持久化）：{cnt}\n并发上限：{get_ocr_limit()}")
+    except Exception as exc:
+        await update.message.reply_text(f"查询失败：{exc}")
+
+
+async def cmd_cache_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    try:
+        from .db import clear_ocr_cache
+        clear_ocr_cache()
+        await update.message.reply_text("已清空 OCR 持久化缓存。")
+    except Exception as exc:
+        await update.message.reply_text(f"清空失败：{exc}")
+
+
+async def cmd_set_ocr_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    if not context.args:
+        await update.message.reply_text(f"当前并发上限：{get_ocr_limit()}，用法：/set_ocr_limit <正整数>")
+        return
+    try:
+        new_limit = int(context.args[0])
+        val = set_ocr_limit(new_limit)
+        await update.message.reply_text(f"已设置 OCR 并发上限为：{val}")
+    except ValueError:
+        await update.message.reply_text("请输入合法的整数。")
 
 
 # --- Detection helpers ---
@@ -852,6 +900,9 @@ async def main() -> None:
     app.add_handler(CommandHandler("set_first_message_strict", cmd_set_first_message_strict))
     app.add_handler(CommandHandler("update", cmd_update))
     app.add_handler(CommandHandler("version", cmd_version))
+    app.add_handler(CommandHandler("cache_stats", cmd_cache_stats))
+    app.add_handler(CommandHandler("cache_clear", cmd_cache_clear))
+    app.add_handler(CommandHandler("set_ocr_limit", cmd_set_ocr_limit))
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
