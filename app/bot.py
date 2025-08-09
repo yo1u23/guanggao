@@ -755,16 +755,18 @@ async def on_text_or_caption(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not text:
         return
 
-    # Optional AI classification to reduce false negatives/locals load
+    # 先走本地规则
+    matched, hit_keywords, hit_regexes = _match_rules(text, chat_id)
+    if matched:
+        await _handle_action(update, context, text, hit_keywords, hit_regexes)
+        return
+
+    # 本地未命中，再走 AI 判别（可识别谐音/意图）
     if should_use_ai():
         is_ad, score, label = await classify_text_with_openrouter(text)
         if is_ad:
             await _handle_action(update, context, text + f"\n\n[AI:{label} {score:.2f}]", ["AI"], [])
             return
-
-    matched, hit_keywords, hit_regexes = _match_rules(text, chat_id)
-    if matched:
-        await _handle_action(update, context, text, hit_keywords, hit_regexes)
 
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
