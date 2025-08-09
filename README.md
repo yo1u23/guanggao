@@ -6,6 +6,10 @@
 - 命中后可删除、通知或删除并通知
 - 管理命令可动态维护规则
 
+### 截图
+- 触发通知截图（占位）：`docs/images/notify-example.png`
+- OCR 命中截图（占位）：`docs/images/ocr-hit-example.png`
+
 ### 文档
 - 详细使用说明见 `docs/USAGE.zh-CN.md`
 - 搭建教程见 `docs/SETUP.zh-CN.md`

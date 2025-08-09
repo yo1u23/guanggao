@@ -35,6 +35,29 @@ cp .env.example .env
 - `OCR_LANGUAGES`：Tesseract 语言（默认 `chi_sim+eng`）
 - `DEFAULT_ACTION`：默认动作（建议 `delete_and_mute_and_notify`）
 
+## 一键搭建脚本
+推荐使用一键脚本完成安装、配置与运行：
+```bash
+# 基本（仅配置 Token）
+./scripts/setup.sh -t <YOUR_BOT_TOKEN>
+
+# 完整示例（含全局管理员、通知群组、OCR语言、默认动作，并自动运行）
+./scripts/setup.sh \
+  -t 123456:ABC-DEF \
+  -a 111111,222222 \
+  -l -1001234567890 \
+  -o chi_sim+eng \
+  -d delete_and_mute_and_notify \
+  -r
+```
+脚本支持参数：
+- `-t`: 机器人 Token（必需）
+- `-a`: 全局管理员用户ID，逗号分隔（可选）
+- `-l`: 管理通知发送到的 Chat ID（可选）
+- `-o`: OCR 语言（可选，默认 `chi_sim+eng`）
+- `-d`: 默认动作（可选，默认 `delete_and_mute_and_notify`）
+- `-r`: 搭建完成后立即运行机器人
+
 ## 启动机器人
 ```bash
 source .venv/bin/activate
