@@ -144,6 +144,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_add_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Add a keyword to current chat rules.
+
+    Usage: /add_keyword <word...>
+    Requires: chat admin or global admin.
+    """
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -159,6 +164,11 @@ async def cmd_add_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def cmd_remove_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remove a keyword from current chat rules.
+
+    Usage: /remove_keyword <word...>
+    Requires: chat admin or global admin.
+    """
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -174,6 +184,7 @@ async def cmd_remove_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def cmd_list_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List all keywords for current chat."""
     chat_id = update.effective_chat.id if update.effective_chat else None
     rules = load_rules(chat_id)
     if not rules.keywords:
@@ -183,6 +194,10 @@ async def cmd_list_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def cmd_add_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Add a regex to current chat rules.
+
+    Validates the pattern can compile before saving.
+    """
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -203,6 +218,7 @@ async def cmd_add_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def cmd_remove_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remove a regex from current chat rules."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -218,6 +234,7 @@ async def cmd_remove_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cmd_list_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List all regex patterns for current chat."""
     chat_id = update.effective_chat.id if update.effective_chat else None
     rules = load_rules(chat_id)
     if not rules.regexes:
@@ -227,6 +244,10 @@ async def cmd_list_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cmd_set_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set action on detection for current chat.
+
+    Allowed: delete|notify|delete_and_notify|mute|mute_and_notify|delete_and_mute|delete_and_mute_and_notify
+    """
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -245,6 +266,7 @@ async def cmd_set_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cmd_set_mute_seconds(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set mute duration (seconds) for mute-related actions in current chat."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -264,6 +286,10 @@ async def cmd_set_mute_seconds(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def cmd_set_newcomer_buffer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Configure newcomer buffer window and mode.
+
+    Usage: /set_newcomer_buffer <seconds> <none|mute|restrict_media|restrict_links>
+    """
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -283,6 +309,10 @@ async def cmd_set_newcomer_buffer(update: Update, context: ContextTypes.DEFAULT_
 
 
 async def cmd_set_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Enable/disable join captcha and optional timeout seconds.
+
+    Usage: /set_captcha <on|off> [timeout_seconds>=10]
+    """
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -310,6 +340,7 @@ async def cmd_set_captcha(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def cmd_set_first_message_strict(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Toggle strict handling for a user's first message in the chat."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -326,6 +357,7 @@ async def cmd_set_first_message_strict(update: Update, context: ContextTypes.DEF
 
 
 async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Run self-update script (global admins only)."""
     user_id = update.effective_user.id
     # Only global admins can trigger self-update
     if ADMIN_IDS and user_id not in ADMIN_IDS:
@@ -349,6 +381,7 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reply with the current short commit hash (version)."""
     def _get_commit() -> str:
         import os, subprocess
         # Prefer git commit, fallback to env GIT_COMMIT
@@ -362,6 +395,7 @@ async def cmd_version(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def cmd_cache_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show OCR persistent cache count and current OCR concurrency limit."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -377,6 +411,7 @@ async def cmd_cache_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def cmd_cache_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Clear the persistent OCR cache table."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -392,6 +427,7 @@ async def cmd_cache_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def cmd_set_ocr_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set OCR concurrency limit at runtime (process-wide)."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -410,6 +446,7 @@ async def cmd_set_ocr_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 
 async def cmd_set_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set AI provider mode: off|openrouter."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -427,6 +464,7 @@ async def cmd_set_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def cmd_set_ai_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set AI model name for OpenRouter (e.g., gpt-4o-mini)."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -441,6 +479,7 @@ async def cmd_set_ai_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cmd_set_ai_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Set OpenRouter API key and optional base endpoint."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -457,6 +496,7 @@ async def cmd_set_ai_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cmd_ai_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show AI runtime stats: mode/model/call counters/last error/threshold."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -470,6 +510,7 @@ async def cmd_ai_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def cmd_set_ai_exclusive(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Toggle AI exclusive mode for images/videos (skip local OCR/rules)."""
     user_id = update.effective_user.id
     chat_id = update.effective_chat.id if update.effective_chat else None
     chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
@@ -541,6 +582,7 @@ def _admin_action_keyboard(chat_id: int, user_id: int, message_id: int) -> Inlin
 
 
 async def _notify_admins(context: ContextTypes.DEFAULT_TYPE, source_message: Message, text_snippet: str, hit_keywords: List[str], hit_regexes: List[str]) -> None:
+    """Notify admin targets with context, hits and content preview."""
     chat = source_message.chat
     user = source_message.from_user
     header = (
@@ -574,6 +616,7 @@ async def _notify_admins(context: ContextTypes.DEFAULT_TYPE, source_message: Mes
 
 
 async def _mute_user(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, seconds: int) -> None:
+    """Restrict a user for a specified number of seconds in the chat."""
     if seconds <= 0:
         return
     until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
@@ -589,6 +632,7 @@ async def _mute_user(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: 
 
 
 async def _unmute_user(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
+    """Lift restrictions previously applied to a user in the chat."""
     try:
         perms = ChatPermissions(
             can_send_messages=True,
@@ -611,6 +655,7 @@ async def _unmute_user(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id
 
 
 async def _handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE, matched_text: str, hit_keywords: List[str], hit_regexes: List[str]) -> None:
+    """Execute configured action (delete/mute/notify combinations)."""
     chat_id = update.effective_chat.id if update.effective_chat else None
     rules = load_rules(chat_id)
     action = rules.action
@@ -686,6 +731,7 @@ async def _send_captcha(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_i
 
 
 async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle new member joins: apply buffer restrictions and send captcha."""
     cm: ChatMemberUpdated = update.chat_member  # type: ignore[assignment]
     if not cm:
         return
@@ -724,6 +770,7 @@ async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def on_captcha_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Validate captcha selections; kick on timeout, accept on correct answer."""
     cq = update.callback_query
     if not cq or not cq.data:
         return
@@ -759,6 +806,10 @@ async def on_captcha_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def on_text_or_caption(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle text-only messages and captions.
+
+    Flow: newcomer checks → local rules → AI fallback (if enabled) → action.
+    """
     message = update.effective_message
     chat_id = update.effective_chat.id if update.effective_chat else None
     user_id = update.effective_user.id if update.effective_user else None
@@ -952,7 +1003,11 @@ async def on_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def _parse_cb(data: str) -> Optional[dict]:
-    # a|<code>|<chat>|<user>|<msg>|[secs]
+    """Parse callback data payload into a structured dict.
+
+    Expected format: a|<code>|<chat>|<user>|<msg>|[secs]
+    Returns None on invalid payload.
+    """
     try:
         parts = data.split("|")
         if len(parts) < 5 or parts[0] != "a":
@@ -968,6 +1023,7 @@ def _parse_cb(data: str) -> Optional[dict]:
 
 
 async def on_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle inline button actions with permission checks and feedback."""
     cq = update.callback_query
     if not cq or not cq.data:
         return
@@ -1029,6 +1085,7 @@ async def on_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def main() -> None:
+    """Entry point: init DB/migrations, build app, register handlers, run polling."""
     token = TELEGRAM_BOT_TOKEN
     if not token:
         raise RuntimeError("请在环境变量 TELEGRAM_BOT_TOKEN 中提供机器人 Token。")
