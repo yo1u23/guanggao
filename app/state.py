@@ -11,6 +11,8 @@ class UserState:
     messages_sent: int
     captcha_required: bool
     captcha_passed: bool
+    captcha_expected_answer: Optional[str] = None
+    captcha_message_id: Optional[int] = None
 
 
 # Key: (chat_id, user_id)
@@ -23,6 +25,8 @@ def on_user_join(chat_id: int, user_id: int, require_captcha: bool) -> UserState
         messages_sent=0,
         captcha_required=require_captcha,
         captcha_passed=not require_captcha,
+        captcha_expected_answer=None,
+        captcha_message_id=None,
     )
     _user_state[(chat_id, user_id)] = state
     return state
@@ -32,11 +36,32 @@ def get_user_state(chat_id: int, user_id: int) -> Optional[UserState]:
     return _user_state.get((chat_id, user_id))
 
 
-def mark_captcha_passed(chat_id: int, user_id: int) -> None:
+def set_captcha_expected(chat_id: int, user_id: int, answer: str, message_id: int) -> None:
     state = _user_state.get((chat_id, user_id))
-    if state:
-        state.captcha_passed = True
-        state.captcha_required = False
+    if not state:
+        state = on_user_join(chat_id, user_id, require_captcha=True)
+    state.captcha_expected_answer = answer
+    state.captcha_message_id = message_id
+    state.captcha_required = True
+    state.captcha_passed = False
+
+
+def get_captcha_expected(chat_id: int, user_id: int) -> Optional[str]:
+    st = _user_state.get((chat_id, user_id))
+    return st.captcha_expected_answer if st else None
+
+
+def clear_captcha(chat_id: int, user_id: int) -> None:
+    st = _user_state.get((chat_id, user_id))
+    if st:
+        st.captcha_expected_answer = None
+        st.captcha_message_id = None
+        st.captcha_required = False
+        st.captcha_passed = True
+
+
+def mark_captcha_passed(chat_id: int, user_id: int) -> None:
+    clear_captcha(chat_id, user_id)
 
 
 def increment_message_count(chat_id: int, user_id: int) -> int:

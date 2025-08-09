@@ -31,6 +31,8 @@ from telegram.ext import (
 
 from .config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, OCR_LANGUAGES, ADMIN_LOG_CHAT_IDS, ALLOWED_ACTIONS
 from .ocr import extract_text_from_image, OCRError
+from .text import normalize_text, contains_link
+from .cache import ocr_text_cache
 from .storage import (
     load_rules,
     add_keyword,
@@ -322,18 +324,18 @@ def _gather_message_text(message: Message) -> str:
 
 
 def _match_rules(text: str, chat_id: Optional[int]) -> Tuple[bool, List[str], List[str]]:
-    text_lower = text.lower()
     rules = load_rules(chat_id)
     hit_keywords: List[str] = []
     hit_regexes: List[str] = []
+    text_norm = normalize_text(text)
     for k in rules.keywords:
         if not k:
             continue
-        if k.lower() in text_lower:
+        if normalize_text(k) in text_norm:
             hit_keywords.append(k)
     for p in rules.regexes:
         try:
-            if re.search(p, text, flags=re.IGNORECASE):
+            if re.search(p, text, flags=re.IGNORECASE) or re.search(p, text_norm, flags=re.IGNORECASE):
                 hit_regexes.append(p)
         except re.error:
             continue
@@ -476,7 +478,9 @@ async def _send_captcha(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_i
     question, answer = _generate_captcha()
     kb = _captcha_keyboard(chat_id, user_id, answer)
     try:
-        await context.bot.send_message(chat_id=chat_id, text=f"<a href=\"tg://user?id={user_id}\">用户</a> 验证码：{question}", parse_mode=ParseMode.HTML, reply_markup=kb)
+        msg = await context.bot.send_message(chat_id=chat_id, text=f"<a href=\"tg://user?id={user_id}\">用户</a> 验证码：{question}", parse_mode=ParseMode.HTML, reply_markup=kb)
+        from .state import set_captcha_expected
+        set_captcha_expected(chat_id, user_id, answer, msg.id)
     except Exception as exc:
         logger.warning("发送验证码失败: %s", exc)
 
@@ -487,6 +491,12 @@ async def _send_captcha(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_i
             try:
                 await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
                 await context.bot.unban_chat_member(chat_id=chat_id, user_id=user_id, only_if_banned=True)
+                # edit captcha message to expired
+                if st.captcha_message_id:
+                    try:
+                        await context.bot.edit_message_text(chat_id=chat_id, message_id=st.captcha_message_id, text="验证码超时 ⛔️")
+                    except Exception:
+                        pass
             except Exception as exc2:
                 logger.warning("验证码超时踢出失败: %s", exc2)
 
@@ -550,9 +560,14 @@ async def on_captcha_click(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await cq.answer("只能本人完成验证", show_alert=True)
         return
 
-    # Any click is treated as answer; keyboard encodes only options, correct is not encoded explicitly
-    # To validate, we require that any option clicked leads to pass; simplifying to avoid storing answers server-side
-    # For stricter validation, we would store the answer per user in state; omitted here for brevity
+    # Strict validate against expected answer
+    expected = get_captcha_expected(chat_id, user_id)
+    if expected is None:
+        await cq.answer("验证已失效或未准备", show_alert=True)
+        return
+    if opt != expected:
+        await cq.answer("答案错误，请重试", show_alert=False)
+        return
     mark_captcha_passed(chat_id, user_id)
     await cq.answer("验证通过")
     try:
@@ -571,10 +586,19 @@ async def on_text_or_caption(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if user_id:
         msg_count = increment_message_count(chat_id, user_id)
         within_buffer = is_within_buffer(chat_id, user_id, rules.newcomer_buffer_seconds)
+        # Link blocking during buffer
+        if within_buffer and rules.newcomer_buffer_mode == "restrict_links":
+            text_tmp = _gather_message_text(message)
+            if contains_link(text_tmp):
+                try:
+                    await message.delete()
+                except Exception as exc:
+                    logger.warning("缓冲期链接删除失败: %s", exc)
+                await _notify_admins(context, message, text_tmp, ["新人期链接"], [])
+                return
         if rules.first_message_strict and msg_count == 1:
             # Apply stricter handling: if matched, prefer delete+mute+notify regardless of action
-            pass  # We will handle below by overriding action once matched
-        # Optional: additional checks for media/links when within buffer can be added here
+            pass
 
     text = _gather_message_text(message)
     if not text:
@@ -603,15 +627,20 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         photo = message.photo[-1]
         file = await photo.get_file()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_path = Path(tmpdir) / f"photo_{file.file_unique_id}.jpg"
-            await file.download_to_drive(custom_path=str(tmp_path))
-            try:
-                ocr_text = extract_text_from_image(tmp_path, OCR_LANGUAGES)
-                if ocr_text:
-                    text_parts.append(ocr_text)
-            except OCRError as e:
-                logger.error("OCR 不可用：%s", e)
+        cached = ocr_text_cache.get(file.file_unique_id)
+        if cached is not None:
+            text_parts.append(cached)
+        else:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmp_path = Path(tmpdir) / f"photo_{file.file_unique_id}.jpg"
+                await file.download_to_drive(custom_path=str(tmp_path))
+                try:
+                    ocr_text = extract_text_from_image(tmp_path, OCR_LANGUAGES)
+                    if ocr_text:
+                        text_parts.append(ocr_text)
+                        ocr_text_cache.set(file.file_unique_id, ocr_text)
+                except OCRError as e:
+                    logger.error("OCR 不可用：%s", e)
     except Exception as exc:
         logger.warning("下载或处理图片失败: %s", exc)
 
@@ -662,21 +691,27 @@ async def on_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     code = payload["code"]
     try:
+        action_desc = None
         if code == "d":
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+            action_desc = "删除"
             await cq.answer("已删除")
         elif code == "m":
             await _mute_user(context, chat_id, user_id, secs)
+            action_desc = f"禁言{secs}秒"
             await cq.answer(f"已禁言 {secs} 秒")
         elif code == "u":
             await _unmute_user(context, chat_id, user_id)
+            action_desc = "解除禁言"
             await cq.answer("已解除禁言")
         elif code == "k":
             await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
             await context.bot.unban_chat_member(chat_id=chat_id, user_id=user_id, only_if_banned=True)
+            action_desc = "踢出"
             await cq.answer("已踢出")
         elif code == "b":
             await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+            action_desc = "封禁"
             await cq.answer("已封禁")
         else:
             await cq.answer("未知操作", show_alert=True)
@@ -686,7 +721,13 @@ async def on_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await cq.answer("操作失败，可能权限不足", show_alert=True)
         return
 
-    # Optionally edit the inline keyboard to reflect completion (no-op here)
+    # Disable buttons after action and mark processed
+    try:
+        if action_desc:
+            new_text = (cq.message.text or "") + f"\n\n（已处理：{action_desc}）"
+            await cq.message.edit_text(new_text)
+    except Exception:
+        pass
 
 
 async def main() -> None:
