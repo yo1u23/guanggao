@@ -6,13 +6,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from telegram import Update, Message, ChatPermissions
+from telegram import Update, Message, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
 )
 
@@ -230,6 +231,22 @@ def _match_rules(text: str, chat_id: Optional[int]) -> Tuple[bool, List[str], Li
     return (bool(hit_keywords or hit_regexes), hit_keywords, hit_regexes)
 
 
+def _admin_action_keyboard(chat_id: int, user_id: int, message_id: int) -> InlineKeyboardMarkup:
+    # Callback data format: a|<code>|<chat>|<user>|<msg>|[secs]
+    row1 = [
+        InlineKeyboardButton(text="删除", callback_data=f"a|d|{chat_id}|{user_id}|{message_id}"),
+        InlineKeyboardButton(text="禁言10m", callback_data=f"a|m|{chat_id}|{user_id}|{message_id}|600"),
+        InlineKeyboardButton(text="禁言1h", callback_data=f"a|m|{chat_id}|{user_id}|{message_id}|3600"),
+        InlineKeyboardButton(text="禁言1d", callback_data=f"a|m|{chat_id}|{user_id}|{message_id}|86400"),
+    ]
+    row2 = [
+        InlineKeyboardButton(text="解除禁言", callback_data=f"a|u|{chat_id}|{user_id}|{message_id}"),
+        InlineKeyboardButton(text="踢出", callback_data=f"a|k|{chat_id}|{user_id}|{message_id}"),
+        InlineKeyboardButton(text="封禁", callback_data=f"a|b|{chat_id}|{user_id}|{message_id}"),
+    ]
+    return InlineKeyboardMarkup([row1, row2])
+
+
 async def _notify_admins(context: ContextTypes.DEFAULT_TYPE, source_message: Message, text_snippet: str, hit_keywords: List[str], hit_regexes: List[str]) -> None:
     chat = source_message.chat
     user = source_message.from_user
@@ -249,9 +266,16 @@ async def _notify_admins(context: ContextTypes.DEFAULT_TYPE, source_message: Mes
     )
 
     targets = list(ADMIN_LOG_CHAT_IDS) or list(ADMIN_IDS)
+    keyboard = _admin_action_keyboard(chat.id, user.id, source_message.id)
     for target in targets:
         try:
-            await context.bot.send_message(chat_id=target, text=body, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
+            await context.bot.send_message(
+                chat_id=target,
+                text=body,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+                reply_markup=keyboard,
+            )
         except Exception as exc:
             logger.warning("通知管理员失败: %s", exc)
 
@@ -269,6 +293,28 @@ async def _mute_user(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: 
         await context.bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, permissions=perms, until_date=until)
     except Exception as exc:
         logger.warning("禁言失败，可能缺少权限: %s", exc)
+
+
+async def _unmute_user(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int) -> None:
+    try:
+        perms = ChatPermissions(
+            can_send_messages=True,
+            can_send_audios=True,
+            can_send_documents=True,
+            can_send_photos=True,
+            can_send_videos=True,
+            can_send_video_notes=True,
+            can_send_voice_notes=True,
+            can_send_polls=True,
+            can_send_other_messages=True,
+            can_add_web_page_previews=True,
+            can_change_info=False,
+            can_invite_users=True,
+            can_pin_messages=False,
+        )
+        await context.bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, permissions=perms)
+    except Exception as exc:
+        logger.warning("解除禁言失败: %s", exc)
 
 
 async def _handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE, matched_text: str, hit_keywords: List[str], hit_regexes: List[str]) -> None:
@@ -333,6 +379,71 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _handle_action(update, context, combined_text, hit_keywords, hit_regexes)
 
 
+def _parse_cb(data: str) -> Optional[dict]:
+    # a|<code>|<chat>|<user>|<msg>|[secs]
+    try:
+        parts = data.split("|")
+        if len(parts) < 5 or parts[0] != "a":
+            return None
+        code = parts[1]
+        chat_id = int(parts[2])
+        user_id = int(parts[3])
+        message_id = int(parts[4])
+        secs = int(parts[5]) if len(parts) >= 6 else None
+        return {"code": code, "chat_id": chat_id, "user_id": user_id, "message_id": message_id, "secs": secs}
+    except Exception:
+        return None
+
+
+async def on_admin_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cq = update.callback_query
+    if not cq or not cq.data:
+        return
+    payload = _parse_cb(cq.data)
+    if not payload:
+        await cq.answer("无效操作", show_alert=True)
+        return
+
+    chat_id = payload["chat_id"]
+    user_id = payload["user_id"]
+    message_id = payload["message_id"]
+    secs = payload.get("secs") or 0
+
+    # Permission check: only chat admins or global admins
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(cq.from_user.id, chat_admin_ids):
+        await cq.answer("无权限", show_alert=True)
+        return
+
+    code = payload["code"]
+    try:
+        if code == "d":
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+            await cq.answer("已删除")
+        elif code == "m":
+            await _mute_user(context, chat_id, user_id, secs)
+            await cq.answer(f"已禁言 {secs} 秒")
+        elif code == "u":
+            await _unmute_user(context, chat_id, user_id)
+            await cq.answer("已解除禁言")
+        elif code == "k":
+            await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+            await context.bot.unban_chat_member(chat_id=chat_id, user_id=user_id, only_if_banned=True)
+            await cq.answer("已踢出")
+        elif code == "b":
+            await context.bot.ban_chat_member(chat_id=chat_id, user_id=user_id)
+            await cq.answer("已封禁")
+        else:
+            await cq.answer("未知操作", show_alert=True)
+            return
+    except Exception as exc:
+        logger.warning("按钮操作失败: %s", exc)
+        await cq.answer("操作失败，可能权限不足", show_alert=True)
+        return
+
+    # Optionally edit the inline keyboard to reflect completion (no-op here)
+
+
 async def main() -> None:
     token = TELEGRAM_BOT_TOKEN
     if not token:
@@ -358,6 +469,7 @@ async def main() -> None:
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
+    app.add_handler(CallbackQueryHandler(on_admin_action, pattern=r"^a\|"))
 
     logger.info("机器人已启动。按 Ctrl+C 结束。")
     await app.run_polling(close_loop=False)
