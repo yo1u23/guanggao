@@ -52,7 +52,7 @@ USAGE
 }
 
 # Parse args
-if [ $# > 0 ]; then
+if [ "$#" -gt 0 ]; then
   while getopts ":t:a:l:o:d:ryM:K:B:m:E:T:h" opt; do
     case $opt in
       t) TOKEN="$OPTARG" ;;
@@ -81,10 +81,10 @@ if [ "${RUN_AFTER-}" = "1" ] || [ "$AUTO_Y" -eq 1 ] && [ "${RUN_AFTER-}" = "1" ]
 fi
 
 prompt() {
-  local label="$1"; shift
-  local varname="$1"; shift
-  local def="${1-}"; shift || true
-  local value
+  label="$1"; shift
+  varname="$1"; shift
+  def="${1-}"; shift || true
+  value=""
   if [ -n "$def" ]; then
     read -r -p "$label [$def]: " value || true
     value="${value:-$def}"
@@ -160,8 +160,8 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 set_env() {
-  local key="$1"; shift
-  local value="$1"; shift || true
+  key="$1"; shift
+  value="$1"; shift || true
   value="${value//\/\\}"
   value="${value//&/\&}"
   if grep -q "^${key}=" "$ENV_FILE"; then
