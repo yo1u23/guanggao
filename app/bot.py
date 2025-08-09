@@ -1,9 +1,8 @@
 import asyncio
 import logging
-import os
 import re
 import tempfile
-from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -17,7 +16,7 @@ from telegram.ext import (
     filters,
 )
 
-from .config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, OCR_LANGUAGES, ADMIN_LOG_CHAT_IDS
+from .config import TELEGRAM_BOT_TOKEN, ADMIN_IDS, OCR_LANGUAGES, ADMIN_LOG_CHAT_IDS, ALLOWED_ACTIONS
 from .ocr import extract_text_from_image, OCRError
 from .storage import (
     load_rules,
@@ -26,6 +25,7 @@ from .storage import (
     add_regex,
     remove_regex,
     set_action,
+    set_mute_seconds,
 )
 
 logging.basicConfig(
@@ -35,15 +35,32 @@ logging.basicConfig(
 logger = logging.getLogger("ad_guard_bot")
 
 
-def ensure_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS if ADMIN_IDS else True
+def ensure_admin(user_id: int, chat_admin_ids: Optional[List[int]] = None) -> bool:
+    if ADMIN_IDS and user_id in ADMIN_IDS:
+        return True
+    if chat_admin_ids and user_id in chat_admin_ids:
+        return True
+    if not ADMIN_IDS and not chat_admin_ids:
+        return True
+    return False
+
+
+async def _get_chat_admin_ids(context: ContextTypes.DEFAULT_TYPE, chat_id: Optional[int]) -> List[int]:
+    if not chat_id:
+        return []
+    try:
+        admins = await context.bot.get_chat_administrators(chat_id)
+        return [m.user.id for m in admins]
+    except Exception as exc:
+        logger.debug("获取群管理员失败: %s", exc)
+        return []
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "你好！我是广告管理机器人。\n"
         "- 识别文本与图片中的关键词/正则\n"
-        "- 管理命令使用 /help 查看",
+        "- 群管理员或全局管理员可通过命令维护规则，/help 查看",
     )
 
 
@@ -56,40 +73,46 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/add_regex 正则 — 添加正则\n"
         "/remove_regex 正则 — 删除正则\n"
         "/list_regex — 列出所有正则\n"
-        "/set_action [delete|notify|delete_and_notify] — 设置命中处理动作\n"
-        "\n普通使用：直接把我拉进群并给管理员权限。"
+        "/set_action [delete|notify|delete_and_notify|mute|mute_and_notify|delete_and_mute|delete_and_mute_and_notify] — 设置命中处理动作\n"
+        "/set_mute_seconds 秒数 — 设置禁言时长（秒），0 表示不禁言\n"
+        "\n普通使用：把我拉进群并给管理员权限（删除/禁言）。"
     )
     await update.message.reply_text(help_text)
 
 
 async def cmd_add_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if not ensure_admin(user_id):
-        await update.message.reply_text("无权限。")
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
         return
     if not context.args:
         await update.message.reply_text("请提供关键词，例如：/add_keyword 低价代充")
         return
     keyword = " ".join(context.args)
-    rules = add_keyword(keyword)
-    await update.message.reply_text(f"已添加关键词：{keyword}\n当前共 {len(rules.keywords)} 个关键词。")
+    rules = add_keyword(keyword, chat_id)
+    await update.message.reply_text(f"已添加关键词：{keyword}\n当前群当前共 {len(rules.keywords)} 个关键词。")
 
 
 async def cmd_remove_keyword(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if not ensure_admin(user_id):
-        await update.message.reply_text("无权限。")
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
         return
     if not context.args:
         await update.message.reply_text("请提供要删除的关键词。")
         return
     keyword = " ".join(context.args)
-    rules = remove_keyword(keyword)
-    await update.message.reply_text(f"已删除关键词：{keyword}\n当前共 {len(rules.keywords)} 个关键词。")
+    rules = remove_keyword(keyword, chat_id)
+    await update.message.reply_text(f"已删除关键词：{keyword}\n当前群当前共 {len(rules.keywords)} 个关键词。")
 
 
 async def cmd_list_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    rules = load_rules()
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    rules = load_rules(chat_id)
     if not rules.keywords:
         await update.message.reply_text("暂无关键词。")
         return
@@ -98,38 +121,42 @@ async def cmd_list_keywords(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def cmd_add_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if not ensure_admin(user_id):
-        await update.message.reply_text("无权限。")
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
         return
     if not context.args:
-        await update.message.reply_text("请提供正则表达式，例如：/add_regex (?i)\b代\s*充\b")
+        await update.message.reply_text("请提供正则表达式，例如：/add_regex (?i)\\b代\\s*充\\b")
         return
     pattern = " ".join(context.args)
-    # simple compile check
     try:
         re.compile(pattern)
     except re.error as exc:
         await update.message.reply_text(f"正则无效：{exc}")
         return
-    rules = add_regex(pattern)
-    await update.message.reply_text(f"已添加正则：{pattern}\n当前共 {len(rules.regexes)} 个正则。")
+    rules = add_regex(pattern, chat_id)
+    await update.message.reply_text(f"已添加正则：{pattern}\n当前群当前共 {len(rules.regexes)} 个正则。")
 
 
 async def cmd_remove_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if not ensure_admin(user_id):
-        await update.message.reply_text("无权限。")
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
         return
     if not context.args:
         await update.message.reply_text("请提供要删除的正则表达式。")
         return
     pattern = " ".join(context.args)
-    rules = remove_regex(pattern)
-    await update.message.reply_text(f"已删除正则：{pattern}\n当前共 {len(rules.regexes)} 个正则。")
+    rules = remove_regex(pattern, chat_id)
+    await update.message.reply_text(f"已删除正则：{pattern}\n当前群当前共 {len(rules.regexes)} 个正则。")
 
 
 async def cmd_list_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    rules = load_rules()
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    rules = load_rules(chat_id)
     if not rules.regexes:
         await update.message.reply_text("暂无正则。")
         return
@@ -138,18 +165,39 @@ async def cmd_list_regex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def cmd_set_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if not ensure_admin(user_id):
-        await update.message.reply_text("无权限。")
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
         return
     if not context.args:
-        await update.message.reply_text("请提供动作：delete | notify | delete_and_notify")
+        await update.message.reply_text("请提供动作：" + " | ".join(sorted(ALLOWED_ACTIONS)))
         return
     action = context.args[0].strip()
     try:
-        rules = set_action(action)
+        rules = set_action(action, chat_id)
         await update.message.reply_text(f"已设置动作：{rules.action}")
     except ValueError:
-        await update.message.reply_text("无效动作：请用 delete / notify / delete_and_notify")
+        await update.message.reply_text("无效动作：请用 " + " | ".join(sorted(ALLOWED_ACTIONS)))
+
+
+async def cmd_set_mute_seconds(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    if not context.args:
+        await update.message.reply_text("请提供禁言时长（秒），例如：/set_mute_seconds 3600")
+        return
+    try:
+        seconds = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text("请输入合法的整数秒数。")
+        return
+    rules = set_mute_seconds(seconds, chat_id)
+    await update.message.reply_text(f"已设置禁言时长：{rules.mute_seconds} 秒")
 
 
 # --- Detection helpers ---
@@ -163,9 +211,9 @@ def _gather_message_text(message: Message) -> str:
     return "\n".join(parts).strip()
 
 
-def _match_rules(text: str) -> Tuple[bool, List[str], List[str]]:
+def _match_rules(text: str, chat_id: Optional[int]) -> Tuple[bool, List[str], List[str]]:
     text_lower = text.lower()
-    rules = load_rules()
+    rules = load_rules(chat_id)
     hit_keywords: List[str] = []
     hit_regexes: List[str] = []
     for k in rules.keywords:
@@ -208,38 +256,59 @@ async def _notify_admins(context: ContextTypes.DEFAULT_TYPE, source_message: Mes
             logger.warning("通知管理员失败: %s", exc)
 
 
+async def _mute_user(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, seconds: int) -> None:
+    if seconds <= 0:
+        return
+    until = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+    perms = ChatPermissions(can_send_messages=False, can_send_audios=False, can_send_documents=False,
+                            can_send_photos=False, can_send_videos=False, can_send_video_notes=False,
+                            can_send_voice_notes=False, can_send_polls=False, can_send_other_messages=False,
+                            can_add_web_page_previews=False, can_change_info=False, can_invite_users=True,
+                            can_pin_messages=False)
+    try:
+        await context.bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, permissions=perms, until_date=until)
+    except Exception as exc:
+        logger.warning("禁言失败，可能缺少权限: %s", exc)
+
+
 async def _handle_action(update: Update, context: ContextTypes.DEFAULT_TYPE, matched_text: str, hit_keywords: List[str], hit_regexes: List[str]) -> None:
-    rules = load_rules()
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    rules = load_rules(chat_id)
     action = rules.action
     message = update.effective_message
+    user_id = update.effective_user.id if update.effective_user else None
 
-    if action in {"delete", "delete_and_notify"}:
+    if action in {"delete", "delete_and_notify", "delete_and_mute", "delete_and_mute_and_notify"}:
         try:
             await message.delete()
         except Exception as exc:
             logger.warning("删除消息失败，可能缺少权限: %s", exc)
 
-    if action in {"notify", "delete_and_notify"}:
+    if action in {"mute", "mute_and_notify", "delete_and_mute", "delete_and_mute_and_notify"} and chat_id and user_id:
+        await _mute_user(context, chat_id, user_id, rules.mute_seconds)
+
+    if action in {"notify", "delete_and_notify", "mute_and_notify", "delete_and_mute_and_notify"}:
         await _notify_admins(context, message, matched_text, hit_keywords, hit_regexes)
 
 
 async def on_text_or_caption(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
+    chat_id = update.effective_chat.id if update.effective_chat else None
     text = _gather_message_text(message)
     if not text:
         return
-    matched, hit_keywords, hit_regexes = _match_rules(text)
+    matched, hit_keywords, hit_regexes = _match_rules(text, chat_id)
     if matched:
         await _handle_action(update, context, text, hit_keywords, hit_regexes)
 
 
 async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.effective_message
+    chat_id = update.effective_chat.id if update.effective_chat else None
     text_parts: List[str] = []
     if message.caption:
         text_parts.append(message.caption)
 
-    # Download the highest resolution photo
     try:
         photo = message.photo[-1]
         file = await photo.get_file()
@@ -259,7 +328,7 @@ async def on_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not combined_text:
         return
 
-    matched, hit_keywords, hit_regexes = _match_rules(combined_text)
+    matched, hit_keywords, hit_regexes = _match_rules(combined_text, chat_id)
     if matched:
         await _handle_action(update, context, combined_text, hit_keywords, hit_regexes)
 
@@ -276,7 +345,6 @@ async def main() -> None:
         .build()
     )
 
-    # Commands
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("add_keyword", cmd_add_keyword))
@@ -286,8 +354,8 @@ async def main() -> None:
     app.add_handler(CommandHandler("remove_regex", cmd_remove_regex))
     app.add_handler(CommandHandler("list_regex", cmd_list_regex))
     app.add_handler(CommandHandler("set_action", cmd_set_action))
+    app.add_handler(CommandHandler("set_mute_seconds", cmd_set_mute_seconds))
 
-    # Messages
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
 

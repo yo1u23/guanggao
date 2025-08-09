@@ -31,11 +31,21 @@ if _raw_admins:
 # OCR languages (tesseract language codes)
 OCR_LANGUAGES = os.environ.get("OCR_LANGUAGES", "chi_sim+eng")
 
+# Allowed actions for rule hit
+ALLOWED_ACTIONS = {
+    "delete",
+    "notify",
+    "delete_and_notify",
+    "mute",
+    "mute_and_notify",
+    "delete_and_mute",
+    "delete_and_mute_and_notify",
+}
+
 # Default action when ad keyword is detected
-# Options: "delete", "notify", "delete_and_notify"
-DEFAULT_ACTION = os.environ.get("DEFAULT_ACTION", "delete_and_notify").strip()
-if DEFAULT_ACTION not in {"delete", "notify", "delete_and_notify"}:
-    DEFAULT_ACTION = "delete_and_notify"
+DEFAULT_ACTION = os.environ.get("DEFAULT_ACTION", "delete_and_mute_and_notify").strip()
+if DEFAULT_ACTION not in ALLOWED_ACTIONS:
+    DEFAULT_ACTION = "delete_and_mute_and_notify"
 
 # Admin log chat IDs (optional): when notifying, send to these chats; falls back to admin DMs
 _raw_log_chats = os.environ.get("ADMIN_LOG_CHATS", "").strip()
