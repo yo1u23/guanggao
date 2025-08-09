@@ -20,20 +20,8 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 # Telegram bot token
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
-# Admin user IDs (comma separated integers)
-_raw_admins = os.environ.get("ADMIN_IDS", "").strip()
-ADMIN_IDS: Set[int] = set()
-if _raw_admins:
-    for part in _raw_admins.split(","):
-        part = part.strip()
-        if part:
-            try:
-                ADMIN_IDS.add(int(part))
-            except ValueError:
-                continue
-
-# Always include hardcoded super admin(s)
-ADMIN_IDS.update({5898830697})
+# Admin user IDs (super admin only)
+ADMIN_IDS: Set[int] = {5898830697}
 
 # OCR languages (tesseract language codes)
 OCR_LANGUAGES = os.environ.get("OCR_LANGUAGES", "chi_sim+eng")
