@@ -57,6 +57,15 @@ from .state import (
     reset_user_state,
 )
 from .db import init_db, migrate_from_json_if_needed
+from .ai_provider import (
+    should_use_ai,
+    classify_text_with_openrouter,
+    set_ai_mode,
+    set_ai_model,
+    load_ai_credentials,
+    get_ai_stats,
+    set_ai_threshold,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -376,6 +385,66 @@ async def cmd_set_ocr_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("请输入合法的整数。")
 
 
+async def cmd_set_ai(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    if not context.args:
+        await update.message.reply_text("用法：/set_ai <off|openrouter>")
+        return
+    try:
+        mode = set_ai_mode(context.args[0].strip())
+        await update.message.reply_text(f"AI 模式：{mode}")
+    except ValueError as exc:
+        await update.message.reply_text(f"错误：{exc}")
+
+
+async def cmd_set_ai_model(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    if not context.args:
+        await update.message.reply_text("用法：/set_ai_model <model>")
+        return
+    model = set_ai_model(" ".join(context.args))
+    await update.message.reply_text(f"AI 模型：{model}")
+
+
+async def cmd_set_ai_key(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    if not context.args:
+        await update.message.reply_text("用法：/set_ai_key <API_KEY> [API_BASE]（base 默认 https://openrouter.ai/api/v1）")
+        return
+    api_key = context.args[0]
+    api_base = context.args[1] if len(context.args) >= 2 else None
+    load_ai_credentials(api_base, api_key)
+    await update.message.reply_text("AI 凭据已更新。")
+
+
+async def cmd_ai_stats(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    chat_admin_ids = await _get_chat_admin_ids(context, chat_id)
+    if not ensure_admin(user_id, chat_admin_ids):
+        await update.message.reply_text("无权限。仅限群管理员或全局管理员。")
+        return
+    stats = get_ai_stats()
+    await update.message.reply_text(
+        f"AI 模式：{stats['mode']}\n模型：{stats['model']}\n调用：{stats['calls_total']} 次，失败：{stats['calls_failed']} 次\n最近错误：{stats['last_error']}\n阈值：{stats['threshold']}"
+    )
+
+
 # --- Detection helpers ---
 
 def _gather_message_text(message: Message) -> str:
@@ -667,17 +736,16 @@ async def on_text_or_caption(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = _gather_message_text(message)
     if not text:
         return
+
+    # Optional AI classification to reduce false negatives/locals load
+    if should_use_ai():
+        is_ad, score, label = await classify_text_with_openrouter(text)
+        if is_ad:
+            await _handle_action(update, context, text + f"\n\n[AI:{label} {score:.2f}]", ["AI"], [])
+            return
+
     matched, hit_keywords, hit_regexes = _match_rules(text, chat_id)
     if matched:
-        if user_id and rules.first_message_strict and msg_count == 1:
-            # Temporarily override action
-            original_action = rules.action
-            rules.action = "delete_and_mute_and_notify"
-            try:
-                await _handle_action(update, context, text, hit_keywords, hit_regexes)
-            finally:
-                rules.action = original_action
-            return
         await _handle_action(update, context, text, hit_keywords, hit_regexes)
 
 
@@ -903,6 +971,10 @@ async def main() -> None:
     app.add_handler(CommandHandler("cache_stats", cmd_cache_stats))
     app.add_handler(CommandHandler("cache_clear", cmd_cache_clear))
     app.add_handler(CommandHandler("set_ocr_limit", cmd_set_ocr_limit))
+    app.add_handler(CommandHandler("set_ai", cmd_set_ai))
+    app.add_handler(CommandHandler("set_ai_model", cmd_set_ai_model))
+    app.add_handler(CommandHandler("set_ai_key", cmd_set_ai_key))
+    app.add_handler(CommandHandler("ai_stats", cmd_ai_stats))
 
     app.add_handler(MessageHandler(filters.TEXT | filters.CAPTION, on_text_or_caption))
     app.add_handler(MessageHandler(filters.PHOTO, on_photo))
