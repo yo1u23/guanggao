@@ -13,12 +13,26 @@
   - 入群验证码（按钮/算术，超时自动踢）
   - 首条消息加严（命中直接删+禁言+通知）
 
-### 一键安装（推荐，curl | bash）
+### 现代化一键安装（推荐，curl | bash）
 ```bash
-# 交互式（会询问 Token/管理员等）
-sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/quick_setup.sh | sudo bash"
+# 交互式（会询问 Token/管理员等，最佳用户体验）
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/modern_install.sh)"
 
 # 非交互 + 注册服务 + 自动运行（将 <TOKEN> 替换为你的 Bot Token）
+TELEGRAM_BOT_TOKEN=<TOKEN> ADMIN_IDS=111,222 \
+  sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/modern_install.sh)" -- -y -s -R
+
+# 完整配置（包含AI + 自动更新）
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/modern_install.sh)" -- \
+  -t <TOKEN> -A 111,222 -M openrouter -K <sk-xxx> -s -U -R -y
+```
+
+### 传统一键安装（兼容性）
+```bash
+# 交互式（quick_setup.sh）
+sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/quick_setup.sh | sudo bash"
+
+# 非交互（quick_setup.sh）
 TELEGRAM_BOT_TOKEN=<TOKEN> ADMIN_IDS=111,222 \
   sudo bash -lc "curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/quick_setup.sh | sudo bash -s -- -y -s -R"
 ```
