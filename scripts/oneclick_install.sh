@@ -2,8 +2,7 @@
 
 # 🚀 Telegram 广告管理机器人 - 一键安装脚本
 # 版本: v2.0.0
-# 作者: AI Assistant
-# 功能: 自动化安装、配置、服务注册
+# 用法: curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/oneclick_install.sh | sudo bash
 
 set -euo pipefail
 
@@ -20,30 +19,23 @@ readonly NC='\033[0m'
 readonly SCRIPT_VERSION="v2.0.0"
 readonly APP_NAME="Telegram Ad Guard Bot"
 readonly REPO_URL="https://github.com/yo1u23/guanggao"
-readonly DEFAULT_INSTALL_DIR="/opt/telegram-ad-guard-bot"
+readonly INSTALL_DIR="/opt/telegram-ad-guard-bot"
 readonly SERVICE_NAME="telegram-ad-guard-bot"
 readonly SERVICE_USER="$(id -un)"
-readonly REQUIRED_PYTHON_VERSION="3.8"
-readonly REQUIRED_MEMORY_MB=512
-readonly REQUIRED_DISK_GB=2
 
 # 全局变量
-INSTALL_DIR="$DEFAULT_INSTALL_DIR"
 TELEGRAM_TOKEN=""
 ADMIN_IDS=""
 NON_INTERACTIVE=false
-INSTALL_SERVICE=false
-RUN_AFTER_INSTALL=false
-SKIP_CHECKS=false
-LOG_FILE="/tmp/telegram-bot-install.log"
-ERROR_LOG="/tmp/telegram-bot-install-error.log"
+INSTALL_SERVICE=true
+RUN_AFTER_INSTALL=true
 
 # 日志函数
-log_info() { echo -e "${BLUE}[INFO]${NC} $*" | tee -a "$LOG_FILE"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*" | tee -a "$LOG_FILE"; }
-log_warning() { echo -e "${YELLOW}[WARNING]${NC} $*" | tee -a "$LOG_FILE"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$ERROR_LOG" | tee -a "$LOG_FILE"; }
-log_header() { echo -e "\n${CYAN}==================================================${NC}\n${WHITE}$*${NC}\n${CYAN}==================================================${NC}\n" | tee -a "$LOG_FILE"; }
+log_info() { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
+log_warning() { echo -e "${YELLOW}[WARNING]${NC} $*"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
+log_header() { echo -e "\n${CYAN}==================================================${NC}\n${WHITE}$*${NC}\n${CYAN}==================================================${NC}\n"; }
 
 # 错误处理
 cleanup_on_error() {
@@ -52,61 +44,26 @@ cleanup_on_error() {
         log_warning "清理安装目录: $INSTALL_DIR"
         rm -rf "$INSTALL_DIR" 2>/dev/null || true
     fi
-    log_error "安装失败。请查看日志文件: $LOG_FILE"
+    log_error "安装失败。请检查错误信息并重试。"
     exit 1
 }
 
 trap cleanup_on_error ERR
 
-# 显示帮助信息
-show_help() {
-    cat << EOF
-$APP_NAME - 一键安装脚本 $SCRIPT_VERSION
-
-用法:
-    bash install.sh [选项]
-
-选项:
-    -t TOKEN      Telegram Bot Token (必需)
-    -a IDS       管理员用户ID，逗号分隔 (可选)
-    -d DIR       安装目录 (默认: $DEFAULT_INSTALL_DIR)
-    -s           安装为系统服务
-    -r           安装后立即运行
-    -y           非交互模式
-    -c           跳过系统检查
-    -h           显示此帮助信息
-
-环境变量:
-    TELEGRAM_BOT_TOKEN    Telegram Bot Token
-    ADMIN_IDS            管理员用户ID，逗号分隔
-
-示例:
-    # 交互式安装
-    sudo bash install.sh
-
-    # 非交互式安装
-    TELEGRAM_BOT_TOKEN=your_token ADMIN_IDS=123,456 sudo bash install.sh -y -s
-
-    # 指定安装目录
-    sudo bash install.sh -d /opt/my-bot -t your_token
-EOF
-}
-
-# 解析命令行参数
-parse_arguments() {
-    while getopts "t:a:d:srych" opt; do
-        case $opt in
-            t) TELEGRAM_TOKEN="$OPTARG" ;;
-            a) ADMIN_IDS="$OPTARG" ;;
-            d) INSTALL_DIR="$OPTARG" ;;
-            s) INSTALL_SERVICE=true ;;
-            r) RUN_AFTER_INSTALL=true ;;
-            y) NON_INTERACTIVE=true ;;
-            c) SKIP_CHECKS=true ;;
-            h) show_help; exit 0 ;;
-            *) show_help; exit 1 ;;
-        esac
-    done
+# 显示欢迎信息
+show_welcome() {
+    clear
+    log_header "欢迎使用 $APP_NAME 一键安装脚本"
+    echo -e "${WHITE}此脚本将自动安装 Telegram 广告管理机器人${NC}"
+    echo -e "${WHITE}支持功能：${NC}"
+    echo -e "  • 文本与图片 OCR 检测"
+    echo -e "  • 关键词和正则表达式过滤"
+    echo -e "  • 自动删除和禁言"
+    echo -e "  • 新人治理功能"
+    echo -e "  • AI 识别支持"
+    echo -e ""
+    echo -e "${YELLOW}注意：此脚本需要 sudo 权限${NC}"
+    echo -e ""
 }
 
 # 检查系统要求
@@ -119,11 +76,6 @@ check_system_requirements() {
         exit 1
     fi
     
-    # 检查是否为 root 用户
-    if [[ $EUID -eq 0 ]]; then
-        log_warning "检测到 root 用户，建议使用 sudo 运行"
-    fi
-    
     # 检查 Python 版本
     if ! command -v python3 &> /dev/null; then
         log_error "Python 3 未安装，请先安装 Python 3.8+"
@@ -131,27 +83,11 @@ check_system_requirements() {
     fi
     
     local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-    if [[ "$(printf '%s\n' "$REQUIRED_PYTHON_VERSION" "$python_version" | sort -V | head -n1)" != "$REQUIRED_PYTHON_VERSION" ]]; then
-        log_error "Python 版本过低，需要 $REQUIRED_PYTHON_VERSION+，当前版本: $python_version"
+    if [[ "$(printf '%s\n' "3.8" "$python_version" | sort -V | head -n1)" != "3.8" ]]; then
+        log_error "Python 版本过低，需要 3.8+，当前版本: $python_version"
         exit 1
     fi
     log_success "Python 版本检查通过: $python_version"
-    
-    # 检查内存
-    local mem_total=$(free -m | awk 'NR==2{print $2}')
-    if [[ $mem_total -lt $REQUIRED_MEMORY_MB ]]; then
-        log_warning "内存不足，推荐 ${REQUIRED_MEMORY_MB}MB+，当前: ${mem_total}MB"
-    else
-        log_success "内存检查通过: ${mem_total}MB"
-    fi
-    
-    # 检查磁盘空间
-    local disk_available=$(df -BG "$(dirname "$INSTALL_DIR")" | awk 'NR==2{print $4}' | sed 's/G//')
-    if [[ $disk_available -lt $REQUIRED_DISK_GB ]]; then
-        log_error "磁盘空间不足，需要 ${REQUIRED_DISK_GB}GB+，可用: ${disk_available}GB"
-        exit 1
-    fi
-    log_success "磁盘空间检查通过: ${disk_available}GB"
     
     # 检查网络连接
     if ! ping -c 1 github.com &> /dev/null; then
@@ -188,10 +124,10 @@ install_system_dependencies() {
     case $pkg_manager in
         apt)
             log_info "更新包列表..."
-            sudo apt-get update
+            apt-get update
             
             log_info "安装系统依赖..."
-            sudo apt-get install -y \
+            apt-get install -y \
                 git \
                 python3 \
                 python3-pip \
@@ -207,7 +143,7 @@ install_system_dependencies() {
             ;;
         yum|dnf)
             log_info "安装系统依赖..."
-            sudo $pkg_manager install -y \
+            $pkg_manager install -y \
                 git \
                 python3 \
                 python3-pip \
@@ -222,7 +158,7 @@ install_system_dependencies() {
             ;;
         pacman)
             log_info "安装系统依赖..."
-            sudo pacman -S --noconfirm \
+            pacman -S --noconfirm \
                 git \
                 python \
                 python-pip \
@@ -236,7 +172,7 @@ install_system_dependencies() {
             ;;
         zypper)
             log_info "安装系统依赖..."
-            sudo zypper install -y \
+            zypper install -y \
                 git \
                 python3 \
                 python3-pip \
@@ -260,15 +196,13 @@ install_system_dependencies() {
 
 # 获取用户输入
 get_user_input() {
-    if [[ "$NON_INTERACTIVE" == "true" ]]; then
-        return
-    fi
-    
     log_header "配置信息"
     
     # 获取 Telegram Bot Token
     while [[ -z "$TELEGRAM_TOKEN" ]]; do
-        read -p "请输入 Telegram Bot Token: " TELEGRAM_TOKEN
+        echo -e "${WHITE}请输入您的 Telegram Bot Token:${NC}"
+        echo -e "${YELLOW}提示：从 @BotFather 获取${NC}"
+        read -p "Token: " TELEGRAM_TOKEN
         if [[ -z "$TELEGRAM_TOKEN" ]]; then
             log_warning "Token 不能为空"
         fi
@@ -276,30 +210,27 @@ get_user_input() {
     
     # 获取管理员ID
     if [[ -z "$ADMIN_IDS" ]]; then
-        read -p "请输入管理员用户ID (逗号分隔，可选): " ADMIN_IDS
-    fi
-    
-    # 获取安装目录
-    read -p "安装目录 [$INSTALL_DIR]: " input_dir
-    if [[ -n "$input_dir" ]]; then
-        INSTALL_DIR="$input_dir"
+        echo -e "${WHITE}请输入管理员用户ID (逗号分隔，可选):${NC}"
+        echo -e "${YELLOW}提示：留空则所有人可用管理命令${NC}"
+        read -p "管理员ID: " ADMIN_IDS
     fi
     
     # 确认安装服务
-    if [[ "$INSTALL_SERVICE" != "true" ]]; then
-        read -p "是否安装为系统服务? [y/N]: " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            INSTALL_SERVICE=true
-        fi
+    echo -e "${WHITE}是否安装为系统服务? [Y/n]:${NC}"
+    echo -e "${YELLOW}提示：推荐选择 Y，机器人将自动启动${NC}"
+    read -p "选择 [Y/n]: " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        INSTALL_SERVICE=false
     fi
     
     # 确认安装后运行
-    if [[ "$RUN_AFTER_INSTALL" != "true" ]]; then
-        read -p "安装后是否立即运行? [y/N]: " -n 1 -r
+    if [[ "$INSTALL_SERVICE" == "false" ]]; then
+        echo -e "${WHITE}安装后是否立即运行? [Y/n]:${NC}"
+        read -p "选择 [Y/n]: " -n 1 -r
         echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            RUN_AFTER_INSTALL=true
+        if [[ $REPLY =~ ^[Nn]$ ]]; then
+            RUN_AFTER_INSTALL=false
         fi
     fi
 }
@@ -310,7 +241,8 @@ clone_repository() {
     
     if [[ -d "$INSTALL_DIR" ]]; then
         log_warning "目标目录已存在: $INSTALL_DIR"
-        read -p "是否删除现有目录? [y/N]: " -n 1 -r
+        echo -e "${WHITE}是否删除现有目录? [y/N]:${NC}"
+        read -p "选择 [y/N]: " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "删除现有目录..."
@@ -420,10 +352,10 @@ WantedBy=multi-user.target
 EOF
     
     # 重新加载 systemd
-    sudo systemctl daemon-reload
+    systemctl daemon-reload
     
     # 启用服务
-    sudo systemctl enable "$SERVICE_NAME"
+    systemctl enable "$SERVICE_NAME"
     
     log_success "系统服务安装完成: $SERVICE_NAME"
 }
@@ -460,8 +392,8 @@ test_installation() {
 start_service() {
     if [[ "$INSTALL_SERVICE" == "true" ]]; then
         log_header "启动系统服务"
-        sudo systemctl start "$SERVICE_NAME"
-        sudo systemctl status "$SERVICE_NAME" --no-pager
+        systemctl start "$SERVICE_NAME"
+        systemctl status "$SERVICE_NAME" --no-pager
         log_success "系统服务已启动"
     elif [[ "$RUN_AFTER_INSTALL" == "true" ]]; then
         log_header "启动机器人"
@@ -476,51 +408,50 @@ start_service() {
 
 # 显示安装完成信息
 show_completion_info() {
-    log_header "安装完成"
+    log_header "🎉 安装完成"
     
     log_success "$APP_NAME 已成功安装到: $INSTALL_DIR"
     
     if [[ "$INSTALL_SERVICE" == "true" ]]; then
-        echo -e "${GREEN}系统服务已安装并启动${NC}"
+        echo -e "${GREEN}✅ 系统服务已安装并启动${NC}"
         echo -e "服务名称: ${CYAN}$SERVICE_NAME${NC}"
-        echo -e "服务状态: ${CYAN}sudo systemctl status $SERVICE_NAME${NC}"
-        echo -e "查看日志: ${CYAN}sudo journalctl -u $SERVICE_NAME -f${NC}"
-        echo -e "重启服务: ${CYAN}sudo systemctl restart $SERVICE_NAME${NC}"
+        echo -e "服务状态: ${CYAN}systemctl status $SERVICE_NAME${NC}"
+        echo -e "查看日志: ${CYAN}journalctl -u $SERVICE_NAME -f${NC}"
+        echo -e "重启服务: ${CYAN}systemctl restart $SERVICE_NAME${NC}"
     fi
     
-    echo -e "\n${YELLOW}下一步操作:${NC}"
+    echo -e "\n${YELLOW}📋 下一步操作:${NC}"
     echo -e "1. 将机器人添加到 Telegram 群组"
     echo -e "2. 赋予机器人管理员权限"
     echo -e "3. 使用 /help 命令查看可用命令"
     
-    echo -e "\n${YELLOW}配置文件位置:${NC}"
+    echo -e "\n${YELLOW}⚙️  配置文件位置:${NC}"
     echo -e "环境配置: ${CYAN}$INSTALL_DIR/.env${NC}"
     
-    echo -e "\n${YELLOW}日志文件:${NC}"
+    echo -e "\n${YELLOW}📝 日志文件:${NC}"
     if [[ "$INSTALL_SERVICE" == "true" ]]; then
-        echo -e "系统日志: ${CYAN}sudo journalctl -u $SERVICE_NAME${NC}"
+        echo -e "系统日志: ${CYAN}journalctl -u $SERVICE_NAME${NC}"
     else
         echo -e "应用日志: ${CYAN}$INSTALL_DIR/bot.log${NC}"
     fi
     
-    echo -e "\n${GREEN}安装完成！如有问题请查看日志文件。${NC}"
+    echo -e "\n${GREEN}🎯 安装完成！如有问题请查看日志文件。${NC}"
+    echo -e "${WHITE}感谢使用 $APP_NAME！${NC}"
 }
 
 # 主函数
 main() {
-    # 初始化日志
-    echo "Telegram Bot 安装日志 - $(date)" > "$LOG_FILE"
-    echo "Telegram Bot 错误日志 - $(date)" > "$ERROR_LOG"
+    # 检查是否为 root 用户
+    if [[ $EUID -ne 0 ]]; then
+        log_error "此脚本需要 root 权限，请使用 sudo 运行"
+        exit 1
+    fi
     
-    log_header "开始安装 $APP_NAME"
-    
-    # 解析参数
-    parse_arguments "$@"
+    # 显示欢迎信息
+    show_welcome
     
     # 检查系统要求
-    if [[ "$SKIP_CHECKS" != "true" ]]; then
-        check_system_requirements
-    fi
+    check_system_requirements
     
     # 获取用户输入
     get_user_input
