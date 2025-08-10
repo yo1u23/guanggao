@@ -2,8 +2,8 @@
 
 # 🚀 Telegram 广告管理机器人 - 一键安装脚本
 # 版本: v2.0.0
-# 作者: AI Assistant
-# 功能: 自动化安装、配置、服务注册
+# 支持: Ubuntu/Debian/CentOS/RHEL/Fedora/Arch Linux
+# 用法: curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/oneclick_install.sh | sudo bash
 
 set -euo pipefail
 
@@ -20,29 +20,22 @@ readonly NC='\033[0m'
 readonly SCRIPT_VERSION="v2.0.0"
 readonly APP_NAME="Telegram Ad Guard Bot"
 readonly REPO_URL="https://github.com/yo1u23/guanggao"
-readonly DEFAULT_INSTALL_DIR="/opt/telegram-ad-guard-bot"
+readonly INSTALL_DIR="/opt/telegram-ad-guard-bot"
 readonly SERVICE_NAME="telegram-ad-guard-bot"
 readonly SERVICE_USER="$(id -un)"
-readonly REQUIRED_PYTHON_VERSION="3.8"
-readonly REQUIRED_MEMORY_MB=512
-readonly REQUIRED_DISK_GB=2
 
 # 全局变量
-INSTALL_DIR="$DEFAULT_INSTALL_DIR"
 TELEGRAM_TOKEN=""
 ADMIN_IDS=""
 NON_INTERACTIVE=false
-INSTALL_SERVICE=false
-RUN_AFTER_INSTALL=false
-SKIP_CHECKS=false
+INSTALL_SERVICE=true
 LOG_FILE="/tmp/telegram-bot-install.log"
-ERROR_LOG="/tmp/telegram-bot-install-error.log"
 
 # 日志函数
 log_info() { echo -e "${BLUE}[INFO]${NC} $*" | tee -a "$LOG_FILE"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*" | tee -a "$LOG_FILE"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $*" | tee -a "$LOG_FILE"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$ERROR_LOG" | tee -a "$LOG_FILE"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $*" | tee -a "$LOG_FILE"; }
 log_header() { echo -e "\n${CYAN}==================================================${NC}\n${WHITE}$*${NC}\n${CYAN}==================================================${NC}\n" | tee -a "$LOG_FILE"; }
 
 # 错误处理
@@ -58,55 +51,24 @@ cleanup_on_error() {
 
 trap cleanup_on_error ERR
 
-# 显示帮助信息
-show_help() {
-    cat << EOF
-$APP_NAME - 一键安装脚本 $SCRIPT_VERSION
-
-用法:
-    bash install.sh [选项]
-
-选项:
-    -t TOKEN      Telegram Bot Token (必需)
-    -a IDS       管理员用户ID，逗号分隔 (可选)
-    -d DIR       安装目录 (默认: $DEFAULT_INSTALL_DIR)
-    -s           安装为系统服务
-    -r           安装后立即运行
-    -y           非交互模式
-    -c           跳过系统检查
-    -h           显示此帮助信息
-
-环境变量:
-    TELEGRAM_BOT_TOKEN    Telegram Bot Token
-    ADMIN_IDS            管理员用户ID，逗号分隔
-
-示例:
-    # 交互式安装
-    sudo bash install.sh
-
-    # 非交互式安装
-    TELEGRAM_BOT_TOKEN=your_token ADMIN_IDS=123,456 sudo bash install.sh -y -s
-
-    # 指定安装目录
-    sudo bash install.sh -d /opt/my-bot -t your_token
-EOF
-}
-
-# 解析命令行参数
-parse_arguments() {
-    while getopts "t:a:d:srych" opt; do
-        case $opt in
-            t) TELEGRAM_TOKEN="$OPTARG" ;;
-            a) ADMIN_IDS="$OPTARG" ;;
-            d) INSTALL_DIR="$OPTARG" ;;
-            s) INSTALL_SERVICE=true ;;
-            r) RUN_AFTER_INSTALL=true ;;
-            y) NON_INTERACTIVE=true ;;
-            c) SKIP_CHECKS=true ;;
-            h) show_help; exit 0 ;;
-            *) show_help; exit 1 ;;
-        esac
-    done
+# 显示欢迎信息
+show_welcome() {
+    clear
+    echo -e "${CYAN}"
+    echo "╔══════════════════════════════════════════════════════════════╗"
+    echo "║                    Telegram 广告管理机器人                    ║"
+    echo "║                        一键安装脚本                          ║"
+    echo "║                        版本: $SCRIPT_VERSION                        ║"
+    echo "╚══════════════════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo -e "${WHITE}功能特性:${NC}"
+    echo -e "• 文本与图片（OCR）双通道检测"
+    echo -e "• 视频首帧 OCR + pHash 去重"
+    echo -e "• AI 识别支持（OpenRouter）"
+    echo -e "• 按群独立规则配置"
+    echo -e "• 新人治理功能"
+    echo -e "• 自动删除广告和垃圾消息"
+    echo
 }
 
 # 检查系统要求
@@ -131,27 +93,11 @@ check_system_requirements() {
     fi
     
     local python_version=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-    if [[ "$(printf '%s\n' "$REQUIRED_PYTHON_VERSION" "$python_version" | sort -V | head -n1)" != "$REQUIRED_PYTHON_VERSION" ]]; then
-        log_error "Python 版本过低，需要 $REQUIRED_PYTHON_VERSION+，当前版本: $python_version"
+    if [[ "$(printf '%s\n' "3.8" "$python_version" | sort -V | head -n1)" != "3.8" ]]; then
+        log_error "Python 版本过低，需要 3.8+，当前版本: $python_version"
         exit 1
     fi
     log_success "Python 版本检查通过: $python_version"
-    
-    # 检查内存
-    local mem_total=$(free -m | awk 'NR==2{print $2}')
-    if [[ $mem_total -lt $REQUIRED_MEMORY_MB ]]; then
-        log_warning "内存不足，推荐 ${REQUIRED_MEMORY_MB}MB+，当前: ${mem_total}MB"
-    else
-        log_success "内存检查通过: ${mem_total}MB"
-    fi
-    
-    # 检查磁盘空间
-    local disk_available=$(df -BG "$(dirname "$INSTALL_DIR")" | awk 'NR==2{print $4}' | sed 's/G//')
-    if [[ $disk_available -lt $REQUIRED_DISK_GB ]]; then
-        log_error "磁盘空间不足，需要 ${REQUIRED_DISK_GB}GB+，可用: ${disk_available}GB"
-        exit 1
-    fi
-    log_success "磁盘空间检查通过: ${disk_available}GB"
     
     # 检查网络连接
     if ! ping -c 1 github.com &> /dev/null; then
@@ -268,7 +214,9 @@ get_user_input() {
     
     # 获取 Telegram Bot Token
     while [[ -z "$TELEGRAM_TOKEN" ]]; do
-        read -p "请输入 Telegram Bot Token: " TELEGRAM_TOKEN
+        echo -e "${YELLOW}请输入 Telegram Bot Token:${NC}"
+        echo -e "${CYAN}提示: 在 @BotFather 处获取${NC}"
+        read -p "Token: " TELEGRAM_TOKEN
         if [[ -z "$TELEGRAM_TOKEN" ]]; then
             log_warning "Token 不能为空"
         fi
@@ -276,31 +224,23 @@ get_user_input() {
     
     # 获取管理员ID
     if [[ -z "$ADMIN_IDS" ]]; then
-        read -p "请输入管理员用户ID (逗号分隔，可选): " ADMIN_IDS
+        echo -e "${YELLOW}请输入管理员用户ID (逗号分隔，可选):${NC}"
+        echo -e "${CYAN}提示: 在 @userinfobot 处获取您的ID${NC}"
+        read -p "管理员ID: " ADMIN_IDS
     fi
     
-    # 获取安装目录
-    read -p "安装目录 [$INSTALL_DIR]: " input_dir
-    if [[ -n "$input_dir" ]]; then
-        INSTALL_DIR="$input_dir"
-    fi
-    
-    # 确认安装服务
-    if [[ "$INSTALL_SERVICE" != "true" ]]; then
-        read -p "是否安装为系统服务? [y/N]: " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            INSTALL_SERVICE=true
-        fi
-    fi
-    
-    # 确认安装后运行
-    if [[ "$RUN_AFTER_INSTALL" != "true" ]]; then
-        read -p "安装后是否立即运行? [y/N]: " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            RUN_AFTER_INSTALL=true
-        fi
+    # 确认安装
+    echo
+    echo -e "${WHITE}安装配置:${NC}"
+    echo -e "• 安装目录: ${CYAN}$INSTALL_DIR${NC}"
+    echo -e "• 服务名称: ${CYAN}$SERVICE_NAME${NC}"
+    echo -e "• 运行用户: ${CYAN}$SERVICE_USER${NC}"
+    echo
+    read -p "确认开始安装? [Y/n]: " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Nn]$ ]]; then
+        log_info "安装已取消"
+        exit 0
     fi
 }
 
@@ -314,7 +254,7 @@ clone_repository() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "删除现有目录..."
-            rm -rf "$INSTALL_DIR"
+            sudo rm -rf "$INSTALL_DIR"
         else
             log_error "安装目录已存在，请选择其他目录或删除现有目录"
             exit 1
@@ -322,7 +262,8 @@ clone_repository() {
     fi
     
     log_info "克隆仓库到: $INSTALL_DIR"
-    git clone "$REPO_URL" "$INSTALL_DIR"
+    sudo git clone "$REPO_URL" "$INSTALL_DIR"
+    sudo chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
     
     if [[ ! -d "$INSTALL_DIR" ]]; then
         log_error "仓库克隆失败"
@@ -332,7 +273,7 @@ clone_repository() {
     log_success "代码仓库克隆完成"
 }
 
-# 创建虚拟环境
+# 设置虚拟环境
 setup_virtual_environment() {
     log_header "设置 Python 虚拟环境"
     
@@ -390,10 +331,6 @@ EOF
 
 # 安装系统服务
 install_system_service() {
-    if [[ "$INSTALL_SERVICE" != "true" ]]; then
-        return
-    fi
-    
     log_header "安装系统服务"
     
     cd "$INSTALL_DIR"
@@ -401,7 +338,7 @@ install_system_service() {
     # 创建服务文件
     local service_file="/etc/systemd/system/$SERVICE_NAME.service"
     
-    cat > "$service_file" << EOF
+    sudo tee "$service_file" > /dev/null << EOF
 [Unit]
 Description=Telegram Ad Guard Bot
 After=network.target
@@ -458,69 +395,53 @@ test_installation() {
 
 # 启动服务
 start_service() {
-    if [[ "$INSTALL_SERVICE" == "true" ]]; then
-        log_header "启动系统服务"
-        sudo systemctl start "$SERVICE_NAME"
-        sudo systemctl status "$SERVICE_NAME" --no-pager
-        log_success "系统服务已启动"
-    elif [[ "$RUN_AFTER_INSTALL" == "true" ]]; then
-        log_header "启动机器人"
-        cd "$INSTALL_DIR"
-        source .venv/bin/activate
-        nohup python -m app.bot > bot.log 2>&1 &
-        local pid=$!
-        log_success "机器人已在后台启动 (PID: $pid)"
-        log_info "日志文件: $INSTALL_DIR/bot.log"
-    fi
+    log_header "启动系统服务"
+    sudo systemctl start "$SERVICE_NAME"
+    sudo systemctl status "$SERVICE_NAME" --no-pager
+    log_success "系统服务已启动"
 }
 
 # 显示安装完成信息
 show_completion_info() {
-    log_header "安装完成"
+    log_header "🎉 安装完成"
     
     log_success "$APP_NAME 已成功安装到: $INSTALL_DIR"
     
-    if [[ "$INSTALL_SERVICE" == "true" ]]; then
-        echo -e "${GREEN}系统服务已安装并启动${NC}"
-        echo -e "服务名称: ${CYAN}$SERVICE_NAME${NC}"
-        echo -e "服务状态: ${CYAN}sudo systemctl status $SERVICE_NAME${NC}"
-        echo -e "查看日志: ${CYAN}sudo journalctl -u $SERVICE_NAME -f${NC}"
-        echo -e "重启服务: ${CYAN}sudo systemctl restart $SERVICE_NAME${NC}"
-    fi
-    
-    echo -e "\n${YELLOW}下一步操作:${NC}"
+    echo -e "${GREEN}系统服务已安装并启动${NC}"
+    echo -e "服务名称: ${CYAN}$SERVICE_NAME${NC}"
+    echo
+    echo -e "${YELLOW}常用命令:${NC}"
+    echo -e "• 查看服务状态: ${CYAN}sudo systemctl status $SERVICE_NAME${NC}"
+    echo -e "• 查看实时日志: ${CYAN}sudo journalctl -u $SERVICE_NAME -f${NC}"
+    echo -e "• 重启服务: ${CYAN}sudo systemctl restart $SERVICE_NAME${NC}"
+    echo -e "• 停止服务: ${CYAN}sudo systemctl stop $SERVICE_NAME${NC}"
+    echo
+    echo -e "${YELLOW}下一步操作:${NC}"
     echo -e "1. 将机器人添加到 Telegram 群组"
-    echo -e "2. 赋予机器人管理员权限"
+    echo -e "2. 赋予机器人管理员权限（删除消息、限制成员）"
     echo -e "3. 使用 /help 命令查看可用命令"
-    
-    echo -e "\n${YELLOW}配置文件位置:${NC}"
+    echo -e "4. 配置群组规则（关键词、正则等）"
+    echo
+    echo -e "${YELLOW}配置文件位置:${NC}"
     echo -e "环境配置: ${CYAN}$INSTALL_DIR/.env${NC}"
-    
-    echo -e "\n${YELLOW}日志文件:${NC}"
-    if [[ "$INSTALL_SERVICE" == "true" ]]; then
-        echo -e "系统日志: ${CYAN}sudo journalctl -u $SERVICE_NAME${NC}"
-    else
-        echo -e "应用日志: ${CYAN}$INSTALL_DIR/bot.log${NC}"
-    fi
-    
-    echo -e "\n${GREEN}安装完成！如有问题请查看日志文件。${NC}"
+    echo
+    echo -e "${YELLOW}日志文件:${NC}"
+    echo -e "系统日志: ${CYAN}sudo journalctl -u $SERVICE_NAME${NC}"
+    echo
+    echo -e "${GREEN}🎯 安装完成！机器人已自动启动并运行。${NC}"
+    echo -e "${CYAN}如有问题请查看日志文件或联系技术支持。${NC}"
 }
 
 # 主函数
 main() {
     # 初始化日志
-    echo "Telegram Bot 安装日志 - $(date)" > "$LOG_FILE"
-    echo "Telegram Bot 错误日志 - $(date)" > "$ERROR_LOG"
+    echo "Telegram Bot 一键安装日志 - $(date)" > "$LOG_FILE"
     
-    log_header "开始安装 $APP_NAME"
-    
-    # 解析参数
-    parse_arguments "$@"
+    # 显示欢迎信息
+    show_welcome
     
     # 检查系统要求
-    if [[ "$SKIP_CHECKS" != "true" ]]; then
-        check_system_requirements
-    fi
+    check_system_requirements
     
     # 获取用户输入
     get_user_input
