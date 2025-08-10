@@ -5,7 +5,7 @@
 # 支持: Ubuntu/Debian/CentOS/RHEL/Fedora/Arch Linux
 # 用法: curl -fsSL https://raw.githubusercontent.com/yo1u23/guanggao/main/scripts/oneclick_install.sh | sudo bash
 
-set -euo pipefail
+set -eo pipefail
 
 # 颜色定义
 readonly RED='\033[0;31m'
@@ -212,13 +212,28 @@ get_user_input() {
     
     log_header "配置信息"
     
+    # 检查是否在交互式终端中
+    if [[ ! -t 0 ]]; then
+        log_error "检测到非交互式环境，无法获取用户输入"
+        log_error "请使用以下方式之一运行脚本："
+        log_error "1. 直接运行: sudo bash scripts/oneclick_install.sh"
+        log_error "2. 设置环境变量: TELEGRAM_TOKEN=your_token ADMIN_IDS=your_id sudo bash scripts/oneclick_install.sh"
+        exit 1
+    fi
+    
     # 获取 Telegram Bot Token
     while [[ -z "$TELEGRAM_TOKEN" ]]; do
         echo -e "${YELLOW}请输入 Telegram Bot Token:${NC}"
         echo -e "${CYAN}提示: 在 @BotFather 处获取${NC}"
-        read -p "Token: " TELEGRAM_TOKEN
+        echo -e "${CYAN}格式: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz${NC}"
+        echo -n "Token: "
+        read -r TELEGRAM_TOKEN
+        echo
         if [[ -z "$TELEGRAM_TOKEN" ]]; then
-            log_warning "Token 不能为空"
+            log_warning "Token 不能为空，请重新输入"
+        elif [[ ! "$TELEGRAM_TOKEN" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]]; then
+            log_warning "Token 格式不正确，请检查后重新输入"
+            TELEGRAM_TOKEN=""
         fi
     done
     
@@ -226,7 +241,10 @@ get_user_input() {
     if [[ -z "$ADMIN_IDS" ]]; then
         echo -e "${YELLOW}请输入管理员用户ID (逗号分隔，可选):${NC}"
         echo -e "${CYAN}提示: 在 @userinfobot 处获取您的ID${NC}"
-        read -p "管理员ID: " ADMIN_IDS
+        echo -e "${CYAN}格式: 123456789 或 123456789,987654321${NC}"
+        echo -n "管理员ID: "
+        read -r ADMIN_IDS
+        echo
     fi
     
     # 确认安装
@@ -235,10 +253,13 @@ get_user_input() {
     echo -e "• 安装目录: ${CYAN}$INSTALL_DIR${NC}"
     echo -e "• 服务名称: ${CYAN}$SERVICE_NAME${NC}"
     echo -e "• 运行用户: ${CYAN}$SERVICE_USER${NC}"
+    echo -e "• Bot Token: ${CYAN}${TELEGRAM_TOKEN:0:10}...${NC}"
+    echo -e "• 管理员ID: ${CYAN}${ADMIN_IDS:-未设置}${NC}"
     echo
-    read -p "确认开始安装? [Y/n]: " -n 1 -r
+    echo -n "确认开始安装? [Y/n]: "
+    read -r -n 1 confirm
     echo
-    if [[ $REPLY =~ ^[Nn]$ ]]; then
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
         log_info "安装已取消"
         exit 0
     fi
